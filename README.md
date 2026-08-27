@@ -1,1 +1,244 @@
-Open the checkout.html file then start to do a trade
+# CR100-SCRP Web Checkout + GxPay Gateway Integration
+
+This is the Dspread QPOS/mPOS **Web SDK demo** (`checkout.html` + the
+`dist/js/*.js` device SDK), reworked so the payment-processing section
+actually authorizes transactions against the **GxPay** gateway instead of
+just displaying raw card data on screen, and packaged to run as a normal
+Node/Express app you can deploy to **Render**.
+
+## What changed vs. the original demo
+
+The original `Script.js`:
+
+- **Displayed raw track1/track2/PAN/expiry/PIN-block data directly on the
+  page** whenever a card was swiped or tapped (`onDoTradeResult`'s `MCR` /
+  `NFC_ONLINE` branches). That's cardholder data in the DOM - never do this.
+- **Hardcoded chip (EMV) authorization to always approve**
+  (`onRequestOnlineProcess` sent back `"8A023030"` - "approved" - for every
+  chip transaction, without ever contacting a payment processor).
+- Had no backend at all - nothing called a gateway, nothing produced a
+  receipt, nothing confirmed a transaction status.
+
+This rework:
+
+- Adds a small Express backend (`server.js`, `routes/`, `services/`,
+  `store/`, `lib/`) that is the **only** thing that ever talks to GxPay.
+  The browser never holds a GxPay API key/secret.
+- Replaces the hardcoded EMV approval with a real authorization call to
+  GxPay during `onRequestOnlineProcess` (see "How chip vs. swipe/tap differ"
+  below).
+- Replaces the raw on-screen card dump with a masked receipt (`**** **** ****
+  1234`) rendered from what the gateway actually returned.
+- Adds card-detection status (`Idle -> Waiting for card -> Card detected ->
+  Processing -> Approved/Declined`), a Checkout/Pay button, a receipt panel
+  with Print and Confirm Status actions, and a `GET
+  /api/payments/:reference/status` endpoint for status confirmation.
+- Trims ~55MB of AdminLTE plugins (rich text editor, US map widget, date
+  pickers, etc.) that this checkout page never used, and removes the
+  original AdminLTE CSS/JS build toolchain from `package.json` (it had a
+  broken peer-dependency tree and a native `node-sass` build - neither is
+  needed at runtime since the CSS/JS output is already pre-built and
+  committed under `public/dist`).
+
+## Architecture
+
+```
+Browser (public/checkout.html)
+  |  card read (already DUKPT/3DES-encrypted by the CR100-SCRP hardware,
+  |  or EMV TLV tags for chip) - never a cleartext PAN/track/PIN
+  v
+Express backend (server.js, routes/payments.js)
+  |  masks/validates, never logs full card data
+  v
+services/gxpayClient.js  --HTTPS-->  GxPay gateway
+  |
+  v
+store/transactionStore.js (receipt + status, for confirm/reconciliation)
+```
+
+- `public/checkout.html` + `public/dist/js/Script.js` - Dspread SDK wiring
+  (Bluetooth/USB connect, EMV config updates, firmware updates). Mostly
+  unchanged except the payment-related callbacks now delegate to
+  `paymentProcessor.js` instead of writing to the DOM directly.
+- `public/dist/js/paymentProcessor.js` - **new**. Owns the checkout button,
+  card-status UI, and the fetch() calls to our backend.
+- `routes/payments.js` - `POST /api/payments/charge`, `GET
+  /api/payments/:reference/status`, `POST /api/payments/webhook/gxpay`.
+- `services/gxpayClient.js` - the only module that calls GxPay. Has a `mock`
+  mode (default) that simulates GxPay so you can test the whole flow with no
+  live credentials.
+- `lib/cardPayload.js` - validates/masks whatever the device sends up before
+  it's used, and actively rejects anything that looks like a cleartext PAN.
+- `store/transactionStore.js` - in-memory transaction store (swap for a real
+  DB before production - see below).
+
+## How chip (ICC) vs. swipe/tap (MCR/NFC) differ
+
+This matters because it changes *when* GxPay gets called:
+
+- **Chip (ICC):** the terminal needs an online authorization response
+  *before* it can finish the EMV cryptogram exchange with the card. That
+  happens in `onRequestOnlineProcess` - this is now where
+  `paymentProcessor.js` calls `POST /api/payments/charge` and waits for
+  GxPay's response before telling the device to approve or decline
+  (`mService.sendOnlineProcessResult(...)`). By the time `onDoTradeResult`
+  fires with `"ICC"`, the card has already finished and we just render the
+  receipt from the result we already have.
+- **Swipe (MCR) / contactless-magstripe (NFC_ONLINE):** the full,
+  already-encrypted card read comes back directly in `onDoTradeResult` - no
+  separate online-authorization step in this SDK - so the charge is
+  submitted there instead.
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env
+npm start
+```
+
+Open `http://localhost:3000`. With the default `GXPAY_MODE=mock`, the full
+checkout flow works without a physical reader or GxPay credentials (see
+"Testing without hardware" below).
+
+### Going live with GxPay
+
+I could not pull GxPay's authenticated API reference
+(`https://merchant-api-dev.gxpay.net/api/v1/docs` and their Postman
+workspace both require a merchant login), so `services/gxpayClient.js` is
+built against a best-effort, industry-standard request/response shape with
+every assumption tagged `// CONFIRM:`. Before switching `GXPAY_MODE` to
+`sandbox`/`live`:
+
+1. Get your GxPay merchant credentials and API docs from your GxPay account
+   rep/dashboard.
+2. In `services/gxpayClient.js`, check `buildChargePayload()` (our request ->
+   GxPay's body) and `normalizeGxPayResponse()` (GxPay's response -> ours)
+   against the real contract - field names, whether amount is minor or major
+   units, the actual endpoint paths, and the auth/signing scheme
+   (`GXPAY_SIGNING=bearer` vs `hmac`).
+3. Fill in `.env`: `GXPAY_BASE_URL`, `GXPAY_API_KEY`, `GXPAY_API_SECRET`,
+   `GXPAY_MERCHANT_ID`, `GXPAY_TERMINAL_ID`.
+4. For chip transactions specifically, confirm with GxPay + Dspread what the
+   full EMV online-authorization exchange needs beyond the response code
+   (tag `8A`) - typically the issuer's ARPC (tag `91`) and any issuer
+   scripts (tags `71`/`72`) also need to be relayed back to the card via the
+   Dspread SDK. `onOnlineAuthorizationRequest()` in `paymentProcessor.js`
+   currently only sends the response code, which is enough to approve/
+   decline but may not be a complete EMV-certified exchange - this needs
+   sign-off from whoever holds your EMV kernel certification.
+
+## Deploying to Render
+
+**Option A - Blueprint (recommended):** push this repo to GitHub, then in
+Render: New -> Blueprint -> point at the repo. `render.yaml` defines the
+service, health check (`/healthz`), and env vars (secrets are marked
+`sync: false` so Render prompts you for them rather than storing defaults in
+git).
+
+**Option B - manual Web Service:** New -> Web Service -> connect the repo ->
+Runtime: Node -> Build Command: `npm install` -> Start Command: `npm start`.
+Then add the `GXPAY_*` env vars from `.env.example` under the Environment
+tab.
+
+**Option C - Docker:** the included `Dockerfile` also works if you'd rather
+deploy Render's Docker runtime (or run it anywhere else with `docker build
+&& docker run`).
+
+Either way, once deployed, `GET https://<your-service>.onrender.com/healthz`
+should return `{"status":"ok","gxpayMode":"..."}`.
+
+## Testing without hardware
+
+`scripts/smoke-test.js` exercises the exact flow you described - card
+detected, amount entered, checkout, GxPay call, receipt returned, status
+confirmed - against your own running server, with no reader or GxPay
+credentials needed:
+
+```bash
+npm start                 # terminal 1
+npm run smoke-test        # terminal 2
+```
+
+It checks:
+1. Health check responds
+2. An approved charge (amount `10.00`) returns a masked-card receipt
+3. A **declined** charge - any amount ending in **.13** (e.g. `5.13`)
+   forces a decline in mock mode, so you can see that path too
+4. A payload with a cleartext PAN is **rejected with HTTP 400** rather than
+   silently forwarded
+5. `GET /api/payments/:reference/status` confirms the transaction afterward
+
+## Testing with the real CR100-SCRP
+
+1. Start the server (`npm start`, `GXPAY_MODE=mock` is fine for this).
+2. Open the checkout page in a browser that supports Web Bluetooth (Chrome/
+   Edge over HTTPS, or `http://localhost` which Chrome treats as a secure
+   context).
+3. Click **Connect** in the top nav, pair the CR100-SCRP. The card-status
+   panel should move from "Not connected" to showing the device once
+   paired.
+4. Enter an amount, click **Checkout / Pay**.
+   - Card status changes to "Please insert, swipe, or tap your card now."
+     (**card detection is displayed**, per your requirement).
+5. Present a card (insert/swipe/tap).
+   - Status moves to "Card detected... Authorizing with GxPay" /
+     "...Sending to GxPay...".
+   - The backend calls GxPay (**or the mock**, depending on `GXPAY_MODE`).
+6. On response, the **receipt panel appears** with masked card, amount,
+   auth code, RRN, gateway reference, and Approved/Declined status (**receipt
+   sent back to the app**).
+7. Click **Confirm Status** to re-query `/api/payments/:reference/status`
+   (**status confirmation**) - useful to demonstrate reconciliation even
+   though this integration currently gets its answer synchronously from the
+   charge call itself.
+
+## Security & PCI notes (read before going live)
+
+- **Never let a cleartext PAN, full track, or PIN reach the browser's DOM or
+  server logs.** `lib/cardPayload.js` actively rejects payloads that look
+  like a cleartext PAN as a safety net, but the real control is upstream:
+  confirm your CR100-SCRP is configured for encrypted-track/DUKPT output
+  (KSN + ciphertext), not cleartext magstripe data. The PIN block was
+  already encrypted in the original demo (standard for any PIN pad) - that
+  part was fine; the PAN/track display was the actual problem, and this
+  rework removes it.
+- This demo has **not** been PCI-assessed. Running a card-present integration
+  with an encrypting reader typically falls under **SAQ P2PE** (if fully
+  P2PE-validated end to end) or **SAQ B-IP/C** otherwise - work with your
+  QSA/GxPay's compliance team to determine which applies to your specific
+  CR100-SCRP configuration and hosting setup before processing real cards.
+- `store/transactionStore.js` is an **in-memory Map** - it's gone on every
+  restart/redeploy. Fine for testing; replace with a real database
+  (Postgres, etc.) before production so transactions survive restarts and
+  are queryable for chargebacks/reconciliation.
+- Rate limiting (`express-rate-limit`) and `helmet` are already wired up in
+  `server.js`; tighten `ALLOWED_ORIGIN` (currently `*`) to your real domain
+  before going live.
+- The webhook receiver (`POST /api/payments/webhook/gxpay`) verifies an
+  HMAC signature if `GXPAY_WEBHOOK_SECRET` is set - confirm GxPay's actual
+  webhook signing scheme (header name, algorithm) before relying on it.
+
+## Environment variables
+
+See `.env.example` for the full list with descriptions. The important ones:
+
+| Variable | Purpose |
+|---|---|
+| `GXPAY_MODE` | `mock` (default, no credentials needed) / `sandbox` / `live` |
+| `GXPAY_BASE_URL`, `GXPAY_API_KEY`, `GXPAY_API_SECRET` | GxPay credentials |
+| `GXPAY_MERCHANT_ID`, `GXPAY_TERMINAL_ID` | Your GxPay merchant/terminal IDs |
+| `GXPAY_SIGNING` | `bearer` or `hmac` - confirm against GxPay's docs |
+| `PORT`, `ALLOWED_ORIGIN` | Server/CORS config |
+
+## What's intentionally not solved here
+
+- The exact GxPay request/response field names (flagged `// CONFIRM:` in
+  `services/gxpayClient.js`) - needs your GxPay merchant docs/Postman
+  collection.
+- Full EMV online-authorization data beyond the response code (ARPC, issuer
+  scripts) for chip transactions - needs sign-off from your EMV kernel
+  certification holder.
+- A persistent transaction store/database.
+- PCI compliance validation - this is an engineering starting point, not a
+  substitute for a QSA assessment.
