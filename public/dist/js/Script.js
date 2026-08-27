@@ -69,9 +69,32 @@ QPOSServiceListenerImpl.prototype.onRequestSelectEmvApp = function (hashtable) {
 }
 
 QPOSServiceListenerImpl.prototype.onRequestDisplay = function (msg) {
-    console.log("onRequestDisplay" + msg);
-    trasactionData.innerText = "onRequestDisplay:" + msg;
+    console.log("onRequestDisplay: " + msg);
+    handleDeviceDisplay(msg);
 }
+// The Dspread SDK core (main.js) has a typo at one call site - it invokes
+// "onReqestDisplay" (missing the first "u") instead of "onRequestDisplay"
+// when a chip card is DECLINED OFFLINE (the card's own risk management
+// rejects the transaction without ever going online - a normal, everyday
+// EMV outcome, not an edge case). Because that misspelled method didn't
+// exist, calling it threw an uncaught TypeError inside the SDK's internal
+// processing chain, which aborted the very next two calls in that same
+// statement - onRequestBatchData(...) and, critically,
+// onRequestTransactionResult(TransactionResult.DECLINED) - before they
+// could run. The end result: the UI never heard about the decline at all
+// and stayed stuck on "Waiting for card..." forever. This implements the
+// misspelled method (matching the SDK's actual call) so that chain
+// completes normally instead of throwing.
+QPOSServiceListenerImpl.prototype.onReqestDisplay = function (msg) {
+    console.log("onReqestDisplay: " + msg);
+    handleDeviceDisplay(msg);
+}
+function handleDeviceDisplay(msg) {
+    if (msg === "REMOVE_CARD" && window.PaymentProcessor) {
+        PaymentProcessor.onDeviceMessage('Please remove the card.');
+    }
+}
+
 QPOSServiceListenerImpl.prototype.onRequestWaitingUser = function (msg) {
     console.log("onRequestWaitingUser" + msg);
     if (window.PaymentProcessor) {
@@ -81,12 +104,26 @@ QPOSServiceListenerImpl.prototype.onRequestWaitingUser = function (msg) {
     }
 }
 
+// Fires with the device's own outcome for the transaction (APPROVED,
+// DECLINED, TERMINATED, CANCEL, CAPK_FAIL, NOT_ICC, SELECT_APP_FAIL,
+// DEVICE_ERROR, CARD_NOT_SUPPORTED, ...). For an ONLINE-authorized
+// transaction this fires alongside (and is secondary to) the GxPay result
+// already shown via PaymentProcessor's receipt panel. But for a card that's
+// declined OFFLINE - never contacting GxPay at all - this is the ONLY
+// signal the app ever receives, so it has to be surfaced here or the
+// operator sees nothing.
 QPOSServiceListenerImpl.prototype.onRequestTransactionResult = function (msg) {
     console.log("onRequestTransactionResult: " + msg);
-    // Was a blocking alert() - that stalls the UI mid-checkout. Device-level
-    // transaction result text now just logs; the authoritative approved/
-    // declined status shown to the operator comes from GxPay via
-    // PaymentProcessor's receipt panel, not this callback.
+    if (!window.PaymentProcessor) return;
+    if (msg === "APPROVED") {
+        // The online-authorized path already shows GxPay's own result via
+        // onOnlineAuthorizationRequest/onTradeComplete - nothing extra needed.
+        return;
+    }
+    PaymentProcessor.onDeviceError(
+        'declined',
+        msg === "DECLINED" ? 'Card declined (offline - not sent to GxPay).' : `Transaction ended: ${msg}`
+    );
 }
 QPOSServiceListenerImpl.prototype.onError = function (msg) {
     console.log("onError: " + msg);
@@ -732,11 +769,14 @@ function ReadModelStr() {
 function UpdateUI() {
     //是否已连接
     console.log("UpdateUI = "+Connected);
+    var connEl = document.getElementById("UI_Connected");
     if (Connected) {
-        document.getElementById("UI_Connected").innerHTML = "Connected:"+Connected_Device.name;
+        connEl.innerHTML = "Connected:"+Connected_Device.name;
+        connEl.classList.add("is-connected");
     }
     else {
-        document.getElementById("UI_Connected").innerHTML = "Connect";
+        connEl.innerHTML = "Connect";
+        connEl.classList.remove("is-connected");
         MPOS_DATA_Ready = false;
     }
 

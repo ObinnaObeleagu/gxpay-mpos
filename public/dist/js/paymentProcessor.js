@@ -43,21 +43,14 @@
 
   function setCardStatus(kind, text) {
     const el = $('card-status');
-    const icon = $('card-status-icon');
     const label = $('card-status-text');
     if (!el) return;
     el.classList.remove('status-waiting', 'status-detected', 'status-error', 'status-processing');
-    const iconByKind = {
-      idle: 'fas fa-plug',
-      waiting: 'fas fa-hand-paper',
-      detected: 'fas fa-check-circle',
-      processing: 'fas fa-spinner fa-spin',
-      error: 'fas fa-exclamation-triangle',
-      approved: 'fas fa-check-circle',
-      declined: 'fas fa-times-circle',
-    };
-    if (kind !== 'idle') el.classList.add(`status-${kind === 'approved' || kind === 'declined' ? 'detected' : kind}`);
-    if (icon) icon.className = `${iconByKind[kind] || 'fas fa-plug'} mr-2`;
+    // approved -> the green "detected" styling; declined -> the red "error"
+    // styling. (These used to both map to "detected", which meant a
+    // declined transaction incorrectly showed the green success color.)
+    const cssKind = { approved: 'detected', declined: 'error' }[kind] || kind;
+    if (kind !== 'idle') el.classList.add(`status-${cssKind}`);
     if (label) label.textContent = text;
   }
 
@@ -237,9 +230,17 @@
   }
 
   function onDeviceError(kind, message) {
-    setCardStatus('error', message);
+    setCardStatus(kind, message);
     setResultText(message);
     resetCheckoutButton();
+  }
+
+  // For neutral/informational device prompts (e.g. "please remove your
+  // card") that aren't necessarily errors or declines - updates the
+  // transaction feed without recoloring the status pill, since the same
+  // prompt can appear after a perfectly normal approved transaction too.
+  function onDeviceMessage(text) {
+    setResultText(text);
   }
 
   // ---- networking to our own backend (never directly to GxPay) ------------
@@ -293,15 +294,15 @@
   }
 
   function showReceipt(receipt) {
-    const panel = $('receipt-panel');
+    const wrap = $('receipt-panel');
     const body = $('receipt-body');
     const badge = $('receipt-status-badge');
-    if (!panel || !body) return;
+    if (!wrap || !body) return;
 
     const approved = receipt.status === 'approved';
     if (badge) {
-      badge.textContent = approved ? 'APPROVED' : receipt.status.toUpperCase();
-      badge.className = `badge mr-2 ${approved ? 'badge-success' : 'badge-danger'}`;
+      badge.textContent = approved ? 'Approved' : receipt.status.charAt(0).toUpperCase() + receipt.status.slice(1);
+      badge.className = `gx-receipt-status ${approved ? 'approved' : receipt.status}`;
     }
 
     const rows = [
@@ -320,15 +321,15 @@
     ];
 
     body.innerHTML = rows
-      .map(([label, value]) => `<div class="receipt-row"><span class="label">${label}</span><span class="value">${escapeHtml(String(value))}</span></div>`)
+      .map(([label, value]) => `<div class="gx-receipt-row"><span class="label">${label}</span><span class="value">${escapeHtml(String(value))}</span></div>`)
       .join('');
 
-    panel.style.display = 'block';
+    wrap.classList.add('is-visible');
   }
 
   function hideReceipt() {
-    const panel = $('receipt-panel');
-    if (panel) panel.style.display = 'none';
+    const wrap = $('receipt-panel');
+    if (wrap) wrap.classList.remove('is-visible');
   }
 
   function escapeHtml(str) {
@@ -367,6 +368,7 @@
     onCardRead,
     onTradeComplete,
     onDeviceError,
+    onDeviceMessage,
     confirmStatus,
     printReceipt,
   };

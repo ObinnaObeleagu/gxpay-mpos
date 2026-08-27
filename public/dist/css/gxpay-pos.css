@@ -1,0 +1,507 @@
+/**
+ * GXPAY POS - design system
+ * ---------------------------------------------------------------------------
+ * Design plan
+ *
+ * Subject: a web app that drives a physical card-present POS terminal
+ * (Dspread CR100-SCRP) and authorizes through GxPay. The audience is a
+ * merchant/cashier at the point of sale - the page has exactly one job most
+ * of the time (take an amount, read a card, show approved/declined and a
+ * receipt), with device setup (connect, EMV/firmware updates) as an
+ * occasional secondary task that shouldn't compete for attention.
+ *
+ * Color (named tokens below): ink (near-black text), paper (page bg),
+ * surface (card white), brand jade-green (primary actions / approved),
+ * amber (waiting-for-card - borrowed from the amber status LED on real
+ * card-reader hardware), danger red (declined/error), a hairline gray.
+ *
+ * Type: Space Grotesk for the wordmark and the amount readout (a display
+ * face with a technical, dial-like character), Inter for UI text and labels
+ * (a plain, highly legible workhorse), IBM Plex Mono for the amount figures,
+ * reference numbers and the receipt (tabular numerals read faster at a
+ * glance, and monospace is literally what a receipt printer sets in - a
+ * functional choice, not just decoration).
+ *
+ * Signature element: the receipt is styled as an actual torn paper slip -
+ * serrated bottom edge, monospace rows - tying the screen back to the
+ * physical act of a terminal printing a receipt. Everything else stays
+ * quiet and disciplined around it.
+ * ---------------------------------------------------------------------------
+ */
+
+:root {
+  --ink: #12141c;
+  --ink-soft: #4b5165;
+  --paper: #f5f6f8;
+  --surface: #ffffff;
+  --line: #e4e7ec;
+  --brand: #0e7c66;
+  --brand-strong: #0b6552;
+  --brand-tint: #e4f5ef;
+  --amber: #e8a33d;
+  --amber-tint: #fdf3e2;
+  --danger: #d6483f;
+  --danger-tint: #fbeae8;
+
+  --font-display: 'Space Grotesk', 'Inter', sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --shadow-card: 0 1px 2px rgba(18, 20, 28, 0.04), 0 8px 24px -12px rgba(18, 20, 28, 0.12);
+  --shadow-pop: 0 4px 10px -2px rgba(18, 20, 28, 0.14), 0 20px 40px -20px rgba(18, 20, 28, 0.22);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+body { margin: 0; min-height: 100vh; }
+
+a { color: var(--brand); text-decoration: none; }
+a:hover { color: var(--brand-strong); }
+
+::selection { background: var(--brand-tint); color: var(--brand-strong); }
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+/* ---------- layout shell ---------- */
+
+.gx-app { display: flex; flex-direction: column; min-height: 100vh; }
+
+.gx-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex-wrap: nowrap;
+}
+@media (max-width: 480px) {
+  .gx-topbar { padding: 12px 16px; }
+  .gx-device-tag { display: none; }
+  .gx-pill span, .gx-pill { white-space: nowrap; }
+}
+
+.gx-topbar-brand { display: flex; align-items: center; }
+.mt-2 { margin-top: 8px; }
+
+.gx-wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.gx-wordmark .gx { color: var(--brand); }
+.gx-wordmark .pos { color: var(--ink); font-weight: 500; }
+.gx-device-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  margin-left: 10px;
+  letter-spacing: 0.02em;
+}
+
+.gx-topbar-actions { display: flex; align-items: center; gap: 10px; }
+
+.gx-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.gx-pill::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #9aa2b1;
+  flex: none;
+}
+.gx-pill:hover { border-color: #c9cedb; color: var(--ink); }
+/* Script.js swaps this element's text between "Connect" and "Connected:<name>"
+   and toggles the is-connected class in the same place (UpdateUI() in
+   Script.js) - the class drives the color, the dot before it. */
+.gx-pill.is-connected { background: var(--brand-tint); color: var(--brand-strong); border-color: #bfe4d8; }
+.gx-pill.is-connected::before { background: var(--brand); box-shadow: 0 0 0 3px var(--brand-tint); }
+
+.gx-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.gx-icon-btn:hover { background: var(--paper); color: var(--ink); }
+
+/* ---------- main content ---------- */
+
+.gx-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.gx-terminal {
+  width: 100%;
+  max-width: 920px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 800px) {
+  .gx-terminal { grid-template-columns: 1fr; }
+}
+
+.gx-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 24px;
+}
+
+.gx-panel-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gx-panel-title i { color: var(--brand); font-size: 13px; }
+.gx-panel-subtitle {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin: 0 0 18px;
+}
+
+/* card reader status strip */
+.gx-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  margin-bottom: 20px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+.gx-status .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #9aa2b1;
+  flex: none;
+}
+.gx-status.status-waiting { background: var(--amber-tint); border-color: #f3dcae; color: #8a5e13; }
+.gx-status.status-waiting .dot { background: var(--amber); animation: gx-pulse 1.1s ease-in-out infinite; }
+.gx-status.status-detected { background: var(--brand-tint); border-color: #bfe4d8; color: var(--brand-strong); }
+.gx-status.status-detected .dot { background: var(--brand); }
+.gx-status.status-processing { background: #eaf1ff; border-color: #c6d7f7; color: #2b4f8f; }
+.gx-status.status-processing .dot { background: #3b6fd6; animation: gx-pulse 0.8s ease-in-out infinite; }
+.gx-status.status-error { background: var(--danger-tint); border-color: #f2c3bf; color: var(--danger); }
+.gx-status.status-error .dot { background: var(--danger); }
+
+@keyframes gx-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.5); opacity: 0.55; }
+}
+
+/* form controls */
+.gx-field { margin-bottom: 16px; }
+.gx-field label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.gx-select, .gx-input {
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.gx-select:focus, .gx-input:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-tint);
+  outline: none;
+}
+
+.gx-amount-row { display: flex; gap: 8px; }
+.gx-amount-row .gx-select { flex: 0 0 96px; }
+.gx-amount-field { flex: 1; position: relative; }
+.gx-amount-input {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 30px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.gx-amount-input:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-tint);
+  outline: none;
+}
+.gx-amount-input::placeholder { color: #b7bccb; }
+
+.gx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--brand);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 13px 18px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.05s ease;
+}
+.gx-btn:hover { background: var(--brand-strong); }
+.gx-btn:active { transform: translateY(1px); }
+.gx-btn:disabled { background: #b7bccb; cursor: not-allowed; }
+
+.gx-btn-ghost {
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+}
+.gx-btn-ghost:hover { background: var(--paper); color: var(--ink); }
+
+.gx-hint { font-size: 12.5px; color: var(--ink-soft); margin-top: 10px; line-height: 1.5; }
+
+/* transaction status feed */
+.gx-feed {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  min-height: 120px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---------- receipt (signature element: a torn paper slip) ---------- */
+
+.gx-receipt-wrap { margin-top: 20px; display: none; }
+.gx-receipt-wrap.is-visible { display: block; }
+.gx-receipt-print-area { box-shadow: var(--shadow-pop); border-radius: var(--radius-md) var(--radius-md) 0 0; }
+
+.gx-receipt {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  border-bottom: none;
+  padding: 20px 20px 16px;
+  position: relative;
+}
+.gx-receipt-serrated {
+  height: 14px;
+  background-color: var(--line);
+  background-image:
+    linear-gradient(135deg, var(--surface) 50%, transparent 50%),
+    linear-gradient(45deg, var(--surface) 50%, transparent 50%);
+  background-repeat: repeat-x;
+  background-size: 14px 14px;
+  background-position: top left;
+}
+
+.gx-receipt-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 14px;
+}
+.gx-receipt-status.approved { background: var(--brand-tint); color: var(--brand-strong); }
+.gx-receipt-status.declined,
+.gx-receipt-status.error { background: var(--danger-tint); color: var(--danger); }
+
+.gx-receipt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.gx-receipt-row:last-child { border-bottom: none; }
+.gx-receipt-row .label { color: var(--ink-soft); }
+.gx-receipt-row .value { color: var(--ink); font-weight: 500; text-align: right; }
+
+.gx-receipt-actions { display: flex; gap: 8px; margin-top: 16px; }
+.gx-receipt-actions .gx-btn-ghost { flex: 1; padding: 9px 12px; font-size: 13px; }
+
+/* ---------- device modal (dependency-free) ---------- */
+
+.gx-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 20, 28, 0.45);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 50;
+}
+.gx-modal-backdrop.is-open { display: flex; }
+
+.gx-modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+}
+.gx-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--line);
+}
+.gx-modal-header h5 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  margin: 0;
+  color: var(--ink);
+}
+.gx-modal-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: 4px;
+}
+.gx-modal-close:hover { color: var(--ink); }
+.gx-modal-body { padding: 20px 22px; }
+.gx-modal-footer { border-top: 1px solid var(--line); padding: 14px 22px; text-align: right; }
+
+.gx-device-group { margin-bottom: 18px; }
+.gx-device-group h6 {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+  margin-bottom: 10px;
+}
+.gx-device-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.gx-device-actions .gx-btn-ghost { width: auto; padding: 8px 14px; font-size: 13px; }
+.gx-device-output {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  min-height: 40px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---------- footer ---------- */
+
+.gx-footer {
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-soft);
+  padding: 18px 20px 26px;
+}
+
+/* ---------- print (receipt only) ---------- */
+
+@media print {
+  body * { visibility: hidden; }
+  .gx-receipt-print-area, .gx-receipt-print-area * { visibility: visible; }
+  .gx-receipt-print-area { position: absolute; top: 0; left: 0; width: 100%; }
+  .gx-receipt-actions { display: none; }
+}

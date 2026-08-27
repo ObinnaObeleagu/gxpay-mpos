@@ -18,6 +18,9 @@ The original `Script.js`:
   chip transaction, without ever contacting a payment processor).
 - Had no backend at all - nothing called a gateway, nothing produced a
   receipt, nothing confirmed a transaction status.
+- Was built on the full AdminLTE dashboard template - sidebar, navbar,
+  dozens of unused plugins, and a "You load dspread Web demo, this file is
+  only created for testing purposes!" popup on every load.
 
 This rework:
 
@@ -29,16 +32,21 @@ This rework:
   below).
 - Replaces the raw on-screen card dump with a masked receipt (`**** **** ****
   1234`) rendered from what the gateway actually returned.
-- Adds card-detection status (`Idle -> Waiting for card -> Card detected ->
-  Processing -> Approved/Declined`), a Checkout/Pay button, a receipt panel
-  with Print and Confirm Status actions, and a `GET
-  /api/payments/:reference/status` endpoint for status confirmation.
-- Trims ~55MB of AdminLTE plugins (rich text editor, US map widget, date
-  pickers, etc.) that this checkout page never used, and removes the
-  original AdminLTE CSS/JS build toolchain from `package.json` (it had a
-  broken peer-dependency tree and a native `node-sass` build - neither is
-  needed at runtime since the CSS/JS output is already pre-built and
-  committed under `public/dist`).
+- **Rebuilt as GXPAY POS**: dropped the AdminLTE dashboard shell (sidebar,
+  navbar, treeview, the testing-purposes popup) entirely in favor of a
+  custom, single-purpose checkout UI - a top bar, a two-panel checkout card
+  (amount/status on the left, live transaction feed + receipt on the right),
+  and terminal setup (connect, device info, EMV/firmware updates) tucked
+  into a small "Device settings" panel instead of cluttering the main flow.
+  New design system in `public/dist/css/gxpay-pos.css` (jade-green brand
+  color, Space Grotesk/Inter/IBM Plex Mono type, a receipt styled as a torn
+  paper slip). No jQuery/Bootstrap dependency - the device settings panel is
+  a small hand-rolled dependency-free modal (`public/dist/js/uiModal.js`).
+- Trims the AdminLTE plugins/build toolchain that this checkout page never
+  used down to just what's actually loaded (Font Awesome only) - `public/`
+  went from 61MB to about 3.5MB - and removes the original AdminLTE CSS/JS
+  build toolchain from `package.json` (it had a broken peer-dependency tree
+  and a native `node-sass` build - neither is needed at runtime).
 
 ## Architecture
 
@@ -62,6 +70,10 @@ store/transactionStore.js (receipt + status, for confirm/reconciliation)
   `paymentProcessor.js` instead of writing to the DOM directly.
 - `public/dist/js/paymentProcessor.js` - **new**. Owns the checkout button,
   card-status UI, and the fetch() calls to our backend.
+- `public/dist/js/uiModal.js` - **new**. Tiny dependency-free open/close
+  controller for the "Device settings" panel.
+- `public/dist/css/gxpay-pos.css` - **new**. The GXPAY POS design system
+  (colors, type, every component on the page).
 - `routes/payments.js` - `POST /api/payments/charge`, `GET
   /api/payments/:reference/status`, `POST /api/payments/webhook/gxpay`.
 - `services/gxpayClient.js` - the only module that calls GxPay. Has a `mock`
@@ -236,6 +248,54 @@ It checks:
    (**status confirmation**) - useful to demonstrate reconciliation even
    though this integration currently gets its answer synchronously from the
    charge call itself.
+
+## Known SDK bug fixed: chip cards declined offline used to hang forever
+
+If a chip card is **declined offline** by the card itself (a normal EMV
+outcome - the card's own risk management rejects the transaction without
+ever going online, distinct from the online-authorization path this
+integration adds GxPay to), the underlying Dspread SDK core (`main.js`) has
+a pre-existing typo: it calls `mListener.onReqestDisplay(...)` (missing the
+"u" in "Request") instead of the correctly-spelled `onRequestDisplay` used
+everywhere else in the SDK. Since nothing implemented the misspelled method,
+calling it threw an uncaught exception *inside* the SDK's own processing
+chain - which silently aborted the very next two calls in that same
+statement, including `onRequestTransactionResult(TransactionResult.DECLINED)`.
+The practical symptom: insert a card that gets offline-declined, and the
+page hangs on "Waiting for card..." forever with no error, no decline
+message, nothing - because the app was never actually told the card was
+declined.
+
+This is fixed in `Script.js` by implementing the misspelled method (so the
+SDK's call succeeds) and by making `onRequestTransactionResult` actually
+surface non-approved outcomes to the operator - previously it was a no-op
+that assumed GxPay's response would always be the source of truth, which
+isn't true for offline declines since GxPay is never contacted in that path.
+
+**If you're still seeing "insert card -> nothing happens" after this fix**,
+it's almost certainly no longer a software bug - work through these in
+order:
+1. **Check the browser console** (F12 -> Console) at the moment of card
+   insertion. Every SDK callback logs (`onRequestWaitingUser`,
+   `onRequestSelectEmvApp`, `onRequestSetPin`, `onRequestOnlineProcess`,
+   `onDoTradeResult`, etc.) - whichever one *doesn't* appear tells you
+   exactly where the device stopped responding.
+2. **Try a swipe or contactless tap** instead of insert, and/or a different
+   card. If *no* entry mode ever produces a console log, the issue is
+   below the app layer entirely (Bluetooth session, reader hardware).
+3. **Confirm EMV/AID configuration has been loaded onto this specific unit.**
+   A chip reader with missing or mismatched AID/kernel config will often
+   ignore inserted chip cards without any host notification at all - this
+   is the single most common real-world cause of exactly this symptom on a
+   freshly unboxed or uncertified terminal. Use Device settings -> Update
+   EMV config (needs the config file from Dspread/GxPay's onboarding team),
+   or confirm with them directly that this CR100-SCRP has valid config for
+   the card schemes you're testing.
+4. **Use a certified EMV test card** if you're in a sandbox/certification
+   environment - not every physical card will be recognized by a
+   test-mode AID configuration.
+5. **Reconnect the reader** (disconnect and reconnect via the top-bar
+   Connect control) in case the BLE session is connected-but-stale.
 
 ## Security & PCI notes (read before going live)
 
