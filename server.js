@@ -1,6 +1,58 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
+
+// ---------------------------------------------------------------------------
+// Preflight check - runs BEFORE any of our own modules are require()'d.
+// A "Cannot find module './config/env'" (or similar) crash means one of the
+// app's own folders didn't make it into whatever Render actually deployed -
+// this print outs exactly what's missing and what IS present, so you don't
+// have to guess from a bare MODULE_NOT_FOUND stack trace. See
+// README-PAYMENT-INTEGRATION.md, "Troubleshooting Render deploys".
+// ---------------------------------------------------------------------------
+const REQUIRED_PATHS = [
+  'config/env.js',
+  'routes/payments.js',
+  'services/gxpayClient.js',
+  'store/transactionStore.js',
+  'lib/cardPayload.js',
+  'public/checkout.html',
+];
+
+const missing = REQUIRED_PATHS.filter((rel) => !fs.existsSync(path.join(__dirname, rel)));
+
+if (missing.length) {
+  const present = fs.readdirSync(__dirname).sort();
+  // eslint-disable-next-line no-console
+  console.error(
+    [
+      '',
+      'FATAL: this deploy is missing required application files:',
+      ...missing.map((m) => `  - ${m}`),
+      '',
+      `Working directory (__dirname): ${__dirname}`,
+      `Top-level contents actually present: ${present.join(', ')}`,
+      '',
+      'This means those folders/files did not make it into what Render deployed -',
+      'it is not a bug in the code itself. Most likely cause: they were never',
+      'committed/pushed to the git repo/branch Render is building from.',
+      '',
+      'To fix:',
+      '  1. On your machine, in the project root, run: git status',
+      '     Anything listed as "Untracked" for the folders above needs `git add`.',
+      '  2. git add config routes services store lib public server.js package.json',
+      '  3. git commit -m "add backend + frontend files" && git push',
+      '  4. Confirm on github.com that you can browse into each folder listed',
+      '     above before redeploying.',
+      '  5. Also check Render Settings -> Root Directory is blank (pointing at',
+      '     the repo root, not a subfolder).',
+      '',
+    ].join('\n')
+  );
+  process.exit(1);
+}
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -39,25 +91,9 @@ app.use('/api/payments', paymentsLimiter, paymentsRouter);
 
 app.get('/healthz', (_req, res) => res.json({ status: 'ok', gxpayMode: config.gxpay.mode }));
 
-const fs = require('fs');
 const publicDir = path.join(__dirname, 'public');
-const checkoutPage = path.join(publicDir, 'checkout.html');
-if (!fs.existsSync(checkoutPage)) {
-  // Fail loudly and immediately rather than starting a server that 404s on
-  // every page. If you hit this on Render, it means public/ didn't make it
-  // into the deployed build - see README-PAYMENT-INTEGRATION.md,
-  // "Troubleshooting Render deploys".
-  // eslint-disable-next-line no-console
-  console.error(
-    `FATAL: ${checkoutPage} not found. The public/ folder is missing from this build.\n` +
-      'Check that public/ is committed to git and not excluded by .gitignore/.dockerignore, ' +
-      'and that Render\'s "Root Directory" setting (if set) points at the repo root.'
-  );
-  process.exit(1);
-}
-
 app.use(express.static(publicDir));
-app.get('/', (_req, res) => res.sendFile(checkoutPage));
+app.get('/', (_req, res) => res.sendFile(path.join(publicDir, 'checkout.html')));
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {

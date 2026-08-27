@@ -179,6 +179,19 @@ startup for the native Node runtime. To fix it:
    the Dockerfile's `package-lock.json*` copies it if present but the app
    will build fine either way.
 
+**`Error: Cannot find module './config/env'`** (or `'./routes/payments'`,
+etc.) - same root cause as above: one of the app's own folders
+(`config/`, `routes/`, `services/`, `store/`, `lib/`) wasn't pushed to the
+repo/branch Render is deploying from. `server.js` now runs a preflight
+check before requiring anything, so instead of a bare `MODULE_NOT_FOUND`
+stack trace, your deploy logs will show exactly which files are missing and
+what's actually present at the top level - follow the steps it prints
+(`git status`, `git add <folder>`, commit, push, verify on github.com).
+This is almost always caused by only some of the reworked folders having
+been committed when the project was first pushed to a new repo - double
+check every one of `config/`, `routes/`, `services/`, `store/`, `lib/`,
+`public/` shows up when you browse the repo on GitHub.
+
 ## Testing without hardware
 
 `scripts/smoke-test.js` exercises the exact flow you described - card
