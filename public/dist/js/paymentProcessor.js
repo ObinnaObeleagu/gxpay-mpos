@@ -107,13 +107,32 @@
     setCardStatus('waiting', 'Preparing card reader...');
     if (checkoutBtn) checkoutBtn.disabled = true;
 
-    // Delegates to the existing Dspread SDK wiring in Script.js, which calls
-    // mService.setAmount(...) and mService.doTrade(...). Card presentment
-    // (insert/swipe/tap) then drives the onRequestWaitingUser /
-    // onRequestOnlineProcess / onDoTradeResult callbacks this module hooks.
-    // Pass the raw typed string (not the reformatted float) to the device
-    // SDK, matching what setAmount()/doTrade() expect.
-    global.startTrade(amountInput.value, currency.numeric, transactionTypeSelect ? transactionTypeSelect.value : '10');
+    // Reset the device's session state before every new charge. A stale
+    // session left over from a previous attempt (card removed mid-trade,
+    // a dropped Bluetooth packet, a prior charge that didn't complete
+    // cleanly, etc.) is the most common real-world cause of the reader
+    // firmware aborting the next command with CMDID_DESTRUCT
+    // ("DEVICE_ERROR" - see onRequestTransactionResult in Script.js). This
+    // is fire-and-forget at the SDK level (no callback), so we just give it
+    // a brief moment to land before issuing the trade.
+    if (typeof mService !== 'undefined' && mService.resetPosStatus) {
+      try {
+        mService.resetPosStatus();
+      } catch (e) {
+        console.warn('[PaymentProcessor] resetPosStatus failed (continuing anyway):', e);
+      }
+    }
+
+    setTimeout(() => {
+      // Delegates to the existing Dspread SDK wiring in Script.js, which
+      // calls mService.setAmount(...) and mService.doTrade(...). Card
+      // presentment (insert/swipe/tap) then drives the
+      // onRequestWaitingUser / onRequestOnlineProcess / onDoTradeResult
+      // callbacks this module hooks. Pass the raw typed string (not the
+      // reformatted float) to the device SDK, matching what
+      // setAmount()/doTrade() expect.
+      global.startTrade(amountInput.value, currency.numeric, transactionTypeSelect ? transactionTypeSelect.value : '10');
+    }, 200);
   }
 
   // ---- callbacks invoked from Script.js's QPOSServiceListenerImpl ---------
