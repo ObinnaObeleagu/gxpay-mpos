@@ -397,11 +397,19 @@ check:
    scrutinize - though it's currently confirmed against three independent
    Dspread reference SDKs (Android, iOS, and the original readMe) sending
    exactly `8A02<code>` with nothing appended.
-4. **Does it fail on every attempt, or only retries after a prior
-   incomplete transaction?** `checkout()` already calls
-   `mService.resetPosStatus()` before every new charge to clear stale
-   session state as a precaution - if it only fails on retries even with
-   that in place, share the full trace log for that attempt.
+4. **RESOLVED on one real device:** an earlier version of `checkout()`
+   called `mService.resetPosStatus()` before every new charge, as a
+   precaution against stale session state from a prior incomplete
+   transaction. Trace log evidence showed this backfiring: the reset's own
+   acknowledgment comes back through the SDK's generic response dispatcher
+   as `onError(DEVICE_RESET)`, and the very next command (`doTrade()`,
+   fired only 200ms later) was landing while the device was still settling
+   from that reset - triggering `CMDID_DESTRUCT` ("DEVICE_ERROR") almost
+   immediately, before a card could even be presented. The reset call has
+   been removed - `doTrade()` is called directly, matching the original
+   stock demo's proven-working behavior. If you still see `DEVICE_ERROR`
+   after this fix, it's a different cause - work through items 1-3 above
+   with a fresh trace log.
 
 ## What's intentionally not solved here
 

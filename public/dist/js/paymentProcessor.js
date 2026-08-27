@@ -131,32 +131,26 @@
     setCardStatus('waiting', 'Preparing card reader...');
     if (checkoutBtn) checkoutBtn.disabled = true;
 
-    // Reset the device's session state before every new charge. A stale
-    // session left over from a previous attempt (card removed mid-trade,
-    // a dropped Bluetooth packet, a prior charge that didn't complete
-    // cleanly, etc.) is the most common real-world cause of the reader
-    // firmware aborting the next command with CMDID_DESTRUCT
-    // ("DEVICE_ERROR" - see onRequestTransactionResult in Script.js). This
-    // is fire-and-forget at the SDK level (no callback), so we just give it
-    // a brief moment to land before issuing the trade.
-    if (typeof mService !== 'undefined' && mService.resetPosStatus) {
-      try {
-        mService.resetPosStatus();
-      } catch (e) {
-        console.warn('[PaymentProcessor] resetPosStatus failed (continuing anyway):', e);
-      }
-    }
-
-    setTimeout(() => {
-      // Delegates to the existing Dspread SDK wiring in Script.js, which
-      // calls mService.setAmount(...) and mService.doTrade(...). Card
-      // presentment (insert/swipe/tap) then drives the
-      // onRequestWaitingUser / onRequestOnlineProcess / onDoTradeResult
-      // callbacks this module hooks. Pass the raw typed string (not the
-      // reformatted float) to the device SDK, matching what
-      // setAmount()/doTrade() expect.
-      global.startTrade(amountInput.value, currency.numeric, transactionTypeSelect ? transactionTypeSelect.value : '10');
-    }, 200);
+    // Delegates to the existing Dspread SDK wiring in Script.js, which
+    // calls mService.setAmount(...) and mService.doTrade(...). Card
+    // presentment (insert/swipe/tap) then drives the
+    // onRequestWaitingUser / onRequestOnlineProcess / onDoTradeResult
+    // callbacks this module hooks. Pass the raw typed string (not the
+    // reformatted float) to the device SDK, matching what
+    // setAmount()/doTrade() expect.
+    //
+    // NOTE: an earlier version of this function called
+    // mService.resetPosStatus() here first, as a speculative precaution
+    // against stale session state. Trace log evidence from real hardware
+    // showed that "reset" call's own acknowledgment gets misclassified by
+    // the SDK's generic response dispatcher as onError(DEVICE_RESET), and
+    // - worse - the subsequent doTrade() call (fired only 200ms later) was
+    // very likely still landing while the device was internally settling
+    // from that reset, triggering a CMDID_DESTRUCT ("DEVICE_ERROR") abort
+    // almost immediately, before a card could physically be presented. That
+    // speculative fix is removed - doTrade() is called directly, matching
+    // the original stock demo's behavior.
+    global.startTrade(amountInput.value, currency.numeric, transactionTypeSelect ? transactionTypeSelect.value : '10');
   }
 
   // ---- callbacks invoked from Script.js's QPOSServiceListenerImpl ---------

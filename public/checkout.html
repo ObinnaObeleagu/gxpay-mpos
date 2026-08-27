@@ -137,7 +137,9 @@
             <button type="button" class="gx-btn gx-btn-ghost" onclick="selectFwFile()"><i class="fas fa-microchip"></i> Update firmware</button>
             <input type="file" id="updateFwFile" onchange="upload2(this)" class="inputFile" hidden>
             <button type="button" class="gx-btn gx-btn-ghost" onclick="switchToSerial()"><i class="fas fa-exchange-alt"></i> Switch to serial</button>
+            <button type="button" class="gx-btn gx-btn-ghost" onclick="resetDevice()"><i class="fas fa-redo"></i> Reset device</button>
           </div>
+          <p class="gx-hint" style="margin-top:-4px;">Use Reset device only if a transaction gets stuck (e.g. a card was removed mid-trade). It is not run automatically before checkout.</p>
           <div class="gx-device-output" id="div_updateResult">Update progress and results will appear here.</div>
           <button class="gx-btn mt-2" id="continue-updateEmv" style="display: none;">Continue EMV update</button>
         </div>
