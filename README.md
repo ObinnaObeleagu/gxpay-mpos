@@ -1,2 +1,1 @@
-# gxpay-mpos
-GXPAY LIMITED POS (WEB VERSION)
+Open the checkout.html file then start to do a trade

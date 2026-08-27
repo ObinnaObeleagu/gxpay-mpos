@@ -1,0 +1,24 @@
+{
+  "name": "cr100-scrp-gxpay-checkout",
+  "description": "Dspread CR100-SCRP mPOS web checkout with GxPay payment gateway integration.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "private": true,
+  "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev:server": "node --watch server.js",
+    "smoke-test": "node scripts/smoke-test.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0"
+  }
+}
