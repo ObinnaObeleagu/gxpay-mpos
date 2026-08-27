@@ -39,8 +39,25 @@ app.use('/api/payments', paymentsLimiter, paymentsRouter);
 
 app.get('/healthz', (_req, res) => res.json({ status: 'ok', gxpayMode: config.gxpay.mode }));
 
-app.use(express.static(path.join(__dirname, 'public')));
-app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'checkout.html')));
+const fs = require('fs');
+const publicDir = path.join(__dirname, 'public');
+const checkoutPage = path.join(publicDir, 'checkout.html');
+if (!fs.existsSync(checkoutPage)) {
+  // Fail loudly and immediately rather than starting a server that 404s on
+  // every page. If you hit this on Render, it means public/ didn't make it
+  // into the deployed build - see README-PAYMENT-INTEGRATION.md,
+  // "Troubleshooting Render deploys".
+  // eslint-disable-next-line no-console
+  console.error(
+    `FATAL: ${checkoutPage} not found. The public/ folder is missing from this build.\n` +
+      'Check that public/ is committed to git and not excluded by .gitignore/.dockerignore, ' +
+      'and that Render\'s "Root Directory" setting (if set) points at the repo root.'
+  );
+  process.exit(1);
+}
+
+app.use(express.static(publicDir));
+app.get('/', (_req, res) => res.sendFile(checkoutPage));
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {

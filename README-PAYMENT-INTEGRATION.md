@@ -148,6 +148,37 @@ deploy Render's Docker runtime (or run it anywhere else with `docker build
 Either way, once deployed, `GET https://<your-service>.onrender.com/healthz`
 should return `{"status":"ok","gxpayMode":"..."}`.
 
+### Troubleshooting Render deploys
+
+**`failed to compute cache key: ... "/public": not found`** (Docker build
+error) - this means the `public/` folder isn't actually present in whatever
+Render is building from. It's not a Dockerfile bug; the Dockerfile now fails
+fast with a clearer message if this happens (`RUN test -f
+public/checkout.html || ...`), and `server.js` does the same check at
+startup for the native Node runtime. To fix it:
+
+1. **Check the folder is actually in your GitHub repo.** Open your repo on
+   github.com and confirm you can browse into `public/checkout.html`,
+   `public/dist/`, and `public/plugins/`. If it's not there, it wasn't
+   committed - re-add it (`git add public && git commit -m "add public" &&
+   git push`) from the repo root, not from inside a subfolder.
+2. **Check Render's "Root Directory" setting** (Service -> Settings ->
+   Build & Deploy). If it's set to anything other than blank/`.`, Render is
+   looking for `public/` inside that subdirectory instead of the repo root.
+3. **If you didn't intend to use Docker:** Render auto-detects the
+   `Dockerfile` and may default new Web Services to the Docker environment.
+   Unless you specifically want a Docker deploy, switch the service's
+   **Environment/Runtime to "Node"** instead (or delete/rename the
+   Dockerfile) and use Build Command `npm install`, Start Command `npm
+   start` - this skips Docker entirely and is simpler to debug, since a
+   missing `public/` will then show as a clear `FATAL: ... not found` line
+   in the deploy logs instead of a Docker checksum error. This is also what
+   `render.yaml` (Option A above) sets up automatically.
+4. **`package-lock.json` missing:** if you deleted/regenerated it locally,
+   commit the current one (`npm install` then `git add package-lock.json`) -
+   the Dockerfile's `package-lock.json*` copies it if present but the app
+   will build fine either way.
+
 ## Testing without hardware
 
 `scripts/smoke-test.js` exercises the exact flow you described - card

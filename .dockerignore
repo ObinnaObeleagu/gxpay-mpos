@@ -1,4 +1,13 @@
 .git
-*Dockerfile*
-*docker-compose*
+.github
 node_modules
+npm-debug.log
+.env
+.env.local
+*.log
+.DS_Store
+docs
+docs_html
+package.adminlte-build.json.bak
+# Explicitly NOT ignoring: public/, server.js, config/, routes/, services/,
+# store/, lib/, package.json - these must reach the Docker build context.
