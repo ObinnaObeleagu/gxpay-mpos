@@ -101,6 +101,19 @@ This matters because it changes *when* GxPay gets called:
   separate online-authorization step in this SDK - so the charge is
   submitted there instead.
 
+**Known issue this repo already fixes:** the reply sent back to the
+terminal for an approved chip transaction must include tag **91** (the
+issuer's authentication data / ARPC), not just tag 8A (the response code).
+Dspread's own SDK reference shows the full reply as `WriteBackIc(tag 8A+tag
+91+tag 71/71)`. Sending tag 8A alone causes some terminal/EMV-kernel
+configurations to hard-abort the session (`CMDID_DESTRUCT`, surfaced to the
+app as `DEVICE_ERROR`) right at that handoff point instead of completing
+normally - `paymentProcessor.js`'s `buildOnlineAuthTlv()` now includes tag
+91 whenever the gateway response has one, and the mock gateway generates a
+plausible one so this is testable without live GxPay credentials. Issuer
+scripts (tags 71/72) are *not* relayed - confirm with GxPay/Dspread whether
+your setup ever needs them before going live.
+
 ## Setup
 
 ```bash

@@ -151,16 +151,39 @@
    * a hardcoded approval, which is not safe.
    *
    * `sendResult(tlvHexString)` must be called exactly once with the TLV the
-   * SDK expects (tag 8A, Authorization Response Code) to let the device
-   * finish the EMV exchange - do not leave the terminal hanging.
+   * SDK expects (see buildOnlineAuthTlv() below) to let the device finish
+   * the EMV exchange - do not leave the terminal hanging.
    *
-   * IMPORTANT: full EMV online processing normally also relays the issuer's
-   * ARPC (tag 91) and any issuer scripts (tags 71/72) back to the card, not
-   * just the response code. Whether GxPay returns that data, and the exact
-   * TLV construction Dspread's kernel expects beyond the response code, is
-   * something to confirm with Dspread + GxPay's EMV integration docs before
-   * going live with chip transactions - see README-PAYMENT-INTEGRATION.md.
+   * IMPORTANT: this now includes tag 91 (ARPC) whenever the gateway returns
+   * one, not just tag 8A (response code) - sending only tag 8A was found to
+   * cause some terminal/EMV-kernel configurations to hard-abort the session
+   * (CMDID_DESTRUCT / "DEVICE_ERROR") right at this handoff point instead of
+   * completing normally. Issuer scripts (tags 71/72) are NOT relayed here -
+   * confirm with GxPay/Dspread whether your specific setup ever needs them
+   * before going live - see README-PAYMENT-INTEGRATION.md.
    */
+  /**
+   * Builds the WriteBackIc()-style reply the Dspread EMV kernel expects for
+   * an online-authorized chip transaction: tag 8A (Authorization Response
+   * Code) is always present, and tag 91 (Issuer Authentication Data / ARPC)
+   * should be included whenever the gateway/issuer returned one - many EMV
+   * kernel configurations require it to complete the card's second
+   * GENERATE AC exchange, and sending only tag 8A appears to be exactly
+   * what causes some terminals to hard-abort the session (CMDID_DESTRUCT /
+   * "DEVICE_ERROR") instead of completing normally. Declines don't carry an
+   * ARPC (the card never needs to authenticate the issuer for a decline).
+   * CONFIRM: GxPay's actual field name for the ARPC in its response, and
+   * whether it also returns issuer script data (tags 71/72) that should be
+   * appended here for specific transactions - see gxpayClient.js.
+   */
+  function buildOnlineAuthTlv(approved, arpcHex) {
+    const responseCode = approved ? '8A023030' : '8A023035';
+    if (!approved || !arpcHex) return responseCode;
+    const clean = arpcHex.replace(/[^0-9a-fA-F]/g, '');
+    const lenByte = (clean.length / 2).toString(16).padStart(2, '0');
+    return `${responseCode}91${lenByte}${clean}`;
+  }
+
   function onOnlineAuthorizationRequest(emvRequestTlvHex, sendResult) {
     if (!state.pending) {
       // Defensive: device asked for authorization but we have no checkout in
@@ -181,9 +204,8 @@
       .then((result) => {
         state.lastResult = result;
         const approved = result.receipt && result.receipt.status === 'approved';
-        // CONFIRM: exact TLV format Dspread's EMV kernel expects for tag 8A
-        // beyond "approved (00)" / "declined (05)" - see docstring above.
-        sendResult(approved ? '8A023030' : '8A023035');
+        const arpc = result.receipt && result.receipt.arpc;
+        sendResult(buildOnlineAuthTlv(approved, arpc));
       })
       .catch((err) => {
         console.error('[PaymentProcessor] online authorization failed:', err);

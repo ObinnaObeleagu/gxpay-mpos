@@ -77,6 +77,7 @@ async function main() {
   check('status approved', approved.body.status === 'approved');
   check('receipt present', !!approved.body.receipt);
   check('receipt has masked card only', /^\*+ ?\*+ ?\*+ ?\d{4}$/.test((approved.body.receipt || {}).card || ''));
+  check('ICC approval includes an ARPC for the terminal handoff', typeof approved.body.receipt.arpc === 'string' && approved.body.receipt.arpc.length === 16);
   console.log('    receipt:', approved.body.receipt, '\n');
 
   // 3. Declined charge (magic amount ending .13 -> forces decline in mock mode)

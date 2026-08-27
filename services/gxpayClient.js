@@ -117,6 +117,12 @@ function normalizeGxPayResponse(body) {
     responseMessage: body.response_message || body.message || (approved ? 'Approved' : 'Declined'),
     cardScheme: body.card_scheme || null,
     maskedPan: body.masked_pan || null,
+    // CONFIRM: GxPay's actual field name for the issuer authentication data
+    // (ARPC) on approved chip (ICC) transactions - commonly "arpc" or
+    // "issuer_authentication_data" across card-present gateways. Needed to
+    // complete the EMV online-authorization reply back to the terminal -
+    // see paymentProcessor.js buildOnlineAuthTlv().
+    arpc: body.arpc || body.issuer_authentication_data || null,
     raw: body,
   };
 }
@@ -188,6 +194,11 @@ function mockCharge(request) {
         masked_pan: device.maskedPan,
         amount: amountMinorUnits,
         currency,
+        // Only real chip (ICC) approvals need an ARPC to hand back to the
+        // terminal (see paymentProcessor.js buildOnlineAuthTlv()). A mock
+        // 8-byte ARPC here lets the full insert-card flow be tested without
+        // live GxPay credentials.
+        arpc: !declines && device.entryMode === 'ICC' ? crypto.randomBytes(8).toString('hex') : null,
       });
     }, 600 + Math.random() * 500); // simulate realistic network/gateway latency
   });
