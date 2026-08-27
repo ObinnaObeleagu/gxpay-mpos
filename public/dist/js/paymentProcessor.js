@@ -54,9 +54,32 @@
     if (label) label.textContent = text;
   }
 
-  function setResultText(text) {
+  /**
+   * Append-only diagnostic trace, timestamped, shown in the "Transaction
+   * status" feed. This keeps the full sequence of what actually happened on
+   * screen - essential for diagnosing hardware-side failures (like an
+   * undocumented DEVICE_ERROR) without needing the browser console open.
+   */
+  function trace(label, detail) {
     const el = $('result_div');
-    if (el) el.innerText = text;
+    if (!el) return;
+    const time = new Date().toLocaleTimeString([], { hour12: false });
+    const line = detail ? `[${time}] ${label} - ${detail}` : `[${time}] ${label}`;
+    console.log(`[PaymentProcessor trace] ${line}`);
+    if (el.dataset.traceStarted !== '1') {
+      el.textContent = '';
+      el.dataset.traceStarted = '1';
+    }
+    el.textContent += (el.textContent ? '\n' : '') + line;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function resetTrace() {
+    const el = $('result_div');
+    if (el) {
+      el.textContent = '';
+      el.dataset.traceStarted = '1';
+    }
   }
 
   function selectedCurrency() {
@@ -103,7 +126,8 @@
       currencyNumeric: currency.numeric,
     };
 
-    setResultText('Starting transaction...');
+    resetTrace();
+    trace('Checkout started', `amount=${amount.toFixed(2)} ${currency.alpha}, type=${transactionTypeSelect ? transactionTypeSelect.value : '10'}`);
     setCardStatus('waiting', 'Preparing card reader...');
     if (checkoutBtn) checkoutBtn.disabled = true;
 
@@ -139,7 +163,7 @@
 
   function onWaitingForCard() {
     setCardStatus('waiting', 'Please insert, swipe, or tap your card now.');
-    setResultText('Waiting for card...');
+    trace('Waiting for card');
   }
 
   /**
@@ -153,48 +177,43 @@
    * `sendResult(tlvHexString)` must be called exactly once with the TLV the
    * SDK expects (see buildOnlineAuthTlv() below) to let the device finish
    * the EMV exchange - do not leave the terminal hanging.
-   *
-   * IMPORTANT: this now includes tag 91 (ARPC) whenever the gateway returns
-   * one, not just tag 8A (response code) - sending only tag 8A was found to
-   * cause some terminal/EMV-kernel configurations to hard-abort the session
-   * (CMDID_DESTRUCT / "DEVICE_ERROR") right at this handoff point instead of
-   * completing normally. Issuer scripts (tags 71/72) are NOT relayed here -
-   * confirm with GxPay/Dspread whether your specific setup ever needs them
-   * before going live - see README-PAYMENT-INTEGRATION.md.
    */
   /**
-   * Builds the WriteBackIc()-style reply the Dspread EMV kernel expects for
-   * an online-authorized chip transaction: tag 8A (Authorization Response
-   * Code) is always present, and tag 91 (Issuer Authentication Data / ARPC)
-   * should be included whenever the gateway/issuer returned one - many EMV
-   * kernel configurations require it to complete the card's second
-   * GENERATE AC exchange, and sending only tag 8A appears to be exactly
-   * what causes some terminals to hard-abort the session (CMDID_DESTRUCT /
-   * "DEVICE_ERROR") instead of completing normally. Declines don't carry an
-   * ARPC (the card never needs to authenticate the issuer for a decline).
-   * CONFIRM: GxPay's actual field name for the ARPC in its response, and
-   * whether it also returns issuer script data (tags 71/72) that should be
-   * appended here for specific transactions - see gxpayClient.js.
+   * Builds the reply the Dspread EMV kernel expects for an online-authorized
+   * chip transaction: tag 8A (Authorization Response Code). Confirmed
+   * against three independent current Dspread reference implementations
+   * (Android SDK v8.4.9, iOS demo, and the original Android readMe) - all
+   * three send exactly "8A02" + responseCode with nothing else appended:
+   *
+   *   pos.sendOnlineProcessResult("8A023030");  // Android reference demo
+   *
+   * An earlier version of this function also appended tag 91 (ARPC) based
+   * on a different/older doc snippet - that was reverted. A real ARPC is
+   * cryptographically derived by the issuer from the card's specific ARQC;
+   * a synthetic placeholder is not just unnecessary but could actively be
+   * rejected by a kernel that validates it, so we only ever send tag 8A.
+   * If GxPay's real response includes a genuine ARPC and transactions still
+   * fail without it on your specific terminal/EMV config, tag 91 support
+   * can be re-added - but start from this confirmed-minimal reply.
    */
-  function buildOnlineAuthTlv(approved, arpcHex) {
-    const responseCode = approved ? '8A023030' : '8A023035';
-    if (!approved || !arpcHex) return responseCode;
-    const clean = arpcHex.replace(/[^0-9a-fA-F]/g, '');
-    const lenByte = (clean.length / 2).toString(16).padStart(2, '0');
-    return `${responseCode}91${lenByte}${clean}`;
+  function buildOnlineAuthTlv(approved) {
+    return approved ? '8A023030' : '8A023035';
   }
 
   function onOnlineAuthorizationRequest(emvRequestTlvHex, sendResult) {
+    trace('Chip inserted - device requested online authorization', `${emvRequestTlvHex ? emvRequestTlvHex.length : 0} hex chars of EMV data`);
+
     if (!state.pending) {
       // Defensive: device asked for authorization but we have no checkout in
       // flight (shouldn't normally happen). Decline rather than silently
       // approving.
+      trace('No checkout in flight - declining defensively');
       sendResult('8A023035'); // tag 8A len 2, ASCII "05" = do not honour
       return;
     }
 
     setCardStatus('processing', 'Card detected. Authorizing with GxPay...');
-    setResultText('Chip card read. Sending to GxPay for authorization...');
+    trace('Calling backend /api/payments/charge for GxPay authorization');
 
     submitCharge({
       entryMode: 'ICC',
@@ -204,12 +223,14 @@
       .then((result) => {
         state.lastResult = result;
         const approved = result.receipt && result.receipt.status === 'approved';
-        const arpc = result.receipt && result.receipt.arpc;
-        sendResult(buildOnlineAuthTlv(approved, arpc));
+        const tlv = buildOnlineAuthTlv(approved);
+        trace(`GxPay responded: ${approved ? 'approved' : 'declined'}`, `sending ${tlv} back to terminal`);
+        sendResult(tlv);
       })
       .catch((err) => {
         console.error('[PaymentProcessor] online authorization failed:', err);
         state.lastResult = { status: 'error', message: err.message };
+        trace('Backend/GxPay call failed', err.message);
         sendResult('8A023035'); // fail safe: decline the chip transaction, never auto-approve on error
       });
   }
@@ -231,7 +252,7 @@
     if (!state.pending) return;
 
     setCardStatus('processing', 'Card detected. Sending to GxPay...');
-    setResultText(`${entryMode === 'NFC_ONLINE' ? 'Contactless' : 'Swipe'} card read. Processing payment...`);
+    trace(`${entryMode} card read`, 'sending to GxPay');
 
     const cardNum = fields[4] || '';
     const track2 = (fields[1] || '').toUpperCase();
@@ -247,12 +268,13 @@
     })
       .then((result) => {
         state.lastResult = result;
+        trace('GxPay responded', result.receipt ? result.receipt.status : result.status);
         renderReceiptFromResult(result);
       })
       .catch((err) => {
         console.error('[PaymentProcessor] charge failed:', err);
         setCardStatus('error', `Payment failed: ${err.message}`);
-        setResultText(`Payment failed: ${err.message}`);
+        trace('Charge failed', err.message);
         resetCheckoutButton();
       });
   }
@@ -264,6 +286,7 @@
    * confirms the transaction is done.
    */
   function onTradeComplete(entryMode) {
+    trace('Device reports trade complete', entryMode);
     if (entryMode !== 'ICC') return;
     if (state.lastResult) {
       renderReceiptFromResult(state.lastResult);
@@ -271,8 +294,8 @@
   }
 
   function onDeviceError(kind, message) {
+    trace(`Device event: ${kind}`, message);
     setCardStatus(kind, message);
-    setResultText(message);
     resetCheckoutButton();
   }
 
@@ -281,7 +304,7 @@
   // transaction feed without recoloring the status pill, since the same
   // prompt can appear after a perfectly normal approved transaction too.
   function onDeviceMessage(text) {
-    setResultText(text);
+    trace('Device', text);
   }
 
   // ---- networking to our own backend (never directly to GxPay) ------------
@@ -322,14 +345,14 @@
 
     if (!result || result.status === 'error' || !result.receipt) {
       setCardStatus('error', (result && result.message) || 'Payment could not be completed.');
-      setResultText((result && result.message) || 'Payment could not be completed.');
+      trace('Payment not completed', (result && result.message) || 'unknown error');
       return;
     }
 
     const receipt = result.receipt;
     const approved = receipt.status === 'approved';
     setCardStatus(approved ? 'approved' : 'declined', approved ? 'Payment approved.' : `Payment declined: ${receipt.responseMessage || ''}`);
-    setResultText(approved ? 'Payment approved. Receipt below.' : `Payment declined. ${receipt.responseMessage || ''}`);
+    trace(approved ? 'Payment approved' : 'Payment declined', receipt.responseMessage || '');
 
     showReceipt(receipt);
   }
@@ -386,15 +409,15 @@
 
   function confirmStatus() {
     if (!state.pending || !state.pending.reference) return;
-    setResultText('Confirming payment status with GxPay...');
+    trace('Confirming payment status with GxPay');
     fetch(`/api/payments/${encodeURIComponent(state.pending.reference)}/status`)
       .then((res) => res.json())
       .then((data) => {
-        setResultText(`Status confirmed: ${data.status.toUpperCase()} (source: ${data.source || 'local'})`);
+        trace(`Status confirmed: ${data.status.toUpperCase()}`, `source: ${data.source || 'local'}`);
         if (data.receipt) showReceipt(data.receipt);
       })
       .catch((err) => {
-        setResultText(`Could not confirm status: ${err.message}`);
+        trace('Could not confirm status', err.message);
       });
   }
 
@@ -412,6 +435,7 @@
     onDeviceMessage,
     confirmStatus,
     printReceipt,
+    trace, // exposed so Script.js can log raw device/protocol events too
   };
   global.checkout = checkout;
 })(window);

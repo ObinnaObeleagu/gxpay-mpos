@@ -101,18 +101,39 @@ This matters because it changes *when* GxPay gets called:
   separate online-authorization step in this SDK - so the charge is
   submitted there instead.
 
-**Known issue this repo already fixes:** the reply sent back to the
-terminal for an approved chip transaction must include tag **91** (the
-issuer's authentication data / ARPC), not just tag 8A (the response code).
-Dspread's own SDK reference shows the full reply as `WriteBackIc(tag 8A+tag
-91+tag 71/71)`. Sending tag 8A alone causes some terminal/EMV-kernel
-configurations to hard-abort the session (`CMDID_DESTRUCT`, surfaced to the
-app as `DEVICE_ERROR`) right at that handoff point instead of completing
-normally - `paymentProcessor.js`'s `buildOnlineAuthTlv()` now includes tag
-91 whenever the gateway response has one, and the mock gateway generates a
-plausible one so this is testable without live GxPay credentials. Issuer
-scripts (tags 71/72) are *not* relayed - confirm with GxPay/Dspread whether
-your setup ever needs them before going live.
+The reply sent back to the terminal for chip transactions is confirmed
+against three independent current Dspread reference implementations
+(Android SDK v8.4.9, iOS demo, the original Android readMe -
+github.com/DspreadOrg) to be exactly `"8A02" + responseCode` (tag 8A,
+Authorization Response Code) - nothing else appended. An earlier version of
+this repo also appended a synthetic tag 91 (ARPC) based on a different/older
+doc snippet; that's been reverted since a real ARPC is cryptographically
+derived by the issuer from the card's specific ARQC, and a fabricated one is
+more likely to be rejected by a validating kernel than to help.
+
+### Debugging a "DEVICE_ERROR" (CMDID_DESTRUCT) on insert
+
+This is a low-level session-abort signal from the terminal's own firmware -
+see `TransactionResult.DEVICE_ERROR` / `CmdId.CMDID_DESTRUCT` in
+`public/dist/js/main.js`. It's not something this app's code controls
+directly, and Dspread doesn't publicly document its exact trigger. To
+narrow it down:
+
+1. **Open the browser console (F12) during a failed transaction.**
+   `Script.js` logs every SDK callback as it fires
+   (`onRequestSelectEmvApp`, `onEmvICCExceptionData`,
+   `onRequestOnlineProcess`, etc.) - the last callback logged before
+   `DEVICE_ERROR` tells you which stage of EMV processing it failed at
+   (app selection vs. online authorization vs. after).
+2. **Confirm EMV configuration (AID/CAPK) has been loaded onto this
+   specific unit.** A terminal with no AID list configured can fail hard on
+   any chip transaction. Device settings → Update EMV Config needs a
+   config file from Dspread/GxPay/your processor - this app doesn't
+   generate one.
+3. **Test swipe or tap on the same device/transaction.** If those succeed
+   and only insert fails, that strongly localizes the problem to
+   chip/EMV-kernel configuration rather than anything in the GxPay
+   integration or backend.
 
 ## Setup
 
@@ -347,6 +368,40 @@ See `.env.example` for the full list with descriptions. The important ones:
 | `GXPAY_MERCHANT_ID`, `GXPAY_TERMINAL_ID` | Your GxPay merchant/terminal IDs |
 | `GXPAY_SIGNING` | `bearer` or `hmac` - confirm against GxPay's docs |
 | `PORT`, `ALLOWED_ORIGIN` | Server/CORS config |
+
+## Debugging DEVICE_ERROR (CMDID_DESTRUCT) on chip transactions
+
+If chip (insert) transactions fail with the terminal aborting mid-session
+(`DEVICE_ERROR` in the transaction status feed), this is an undocumented
+low-level firmware abort - Dspread's SDK reference docs list it as an enum
+value but never document what triggers it, across every language SDK they
+publish.
+
+The Transaction Status panel is a **live, append-only trace** of every
+device/EMV callback that fires, with timestamps - it does not need the
+browser console open. When this happens, read the trace top to bottom and
+check:
+
+1. **Does it get past "Chip inserted - device requested online
+   authorization"?** If not, the failure is happening before GxPay is even
+   contacted - purely a device/EMV-kernel issue unrelated to the payment
+   integration.
+2. **Does "Device requested PIN entry" appear?** If so and nothing sends a
+   PIN back (this repo doesn't implement PIN capture yet - see the comment
+   on `onRequestSetPin` in `Script.js`), the terminal is very likely timing
+   out waiting for a PIN that never arrives. Test with a card/CVM
+   configuration that doesn't require PIN entry to confirm.
+3. **Does "GxPay responded" appear before DEVICE_ERROR?** If GxPay/mock
+   responded but the terminal still aborts, the reply TLV
+   (`buildOnlineAuthTlv()` in `paymentProcessor.js`) is the next thing to
+   scrutinize - though it's currently confirmed against three independent
+   Dspread reference SDKs (Android, iOS, and the original readMe) sending
+   exactly `8A02<code>` with nothing appended.
+4. **Does it fail on every attempt, or only retries after a prior
+   incomplete transaction?** `checkout()` already calls
+   `mService.resetPosStatus()` before every new charge to clear stale
+   session state as a precaution - if it only fails on retries even with
+   that in place, share the full trace log for that attempt.
 
 ## What's intentionally not solved here
 

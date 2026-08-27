@@ -29,9 +29,6 @@ function buildReceipt({ reference, amount, currency, result, device }) {
     rrn: result.rrn,
     gatewayReference: result.gatewayReference,
     responseMessage: result.responseMessage,
-    // Only relevant for ICC (chip) - needed client-side to complete the EMV
-    // online-authorization reply back to the terminal. Never displayed.
-    arpc: result.arpc || null,
     timestamp: new Date().toISOString(),
   };
 }

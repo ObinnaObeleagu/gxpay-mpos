@@ -65,6 +65,7 @@ QPOSServiceListenerImpl.prototype.onQposIdResult = function (deviceId) {
 }
 QPOSServiceListenerImpl.prototype.onRequestSelectEmvApp = function (hashtable) {
     console.log("onRequestSelectEmvApp:" + hashtable);
+    if (window.PaymentProcessor) PaymentProcessor.trace('EMV app selection requested', 'auto-selecting app 0');
     mService.selectEmvApp(0);
 }
 
@@ -90,6 +91,7 @@ QPOSServiceListenerImpl.prototype.onReqestDisplay = function (msg) {
     handleDeviceDisplay(msg);
 }
 function handleDeviceDisplay(msg) {
+    if (window.PaymentProcessor) PaymentProcessor.trace('Device display', msg);
     if (msg === "REMOVE_CARD" && window.PaymentProcessor) {
         PaymentProcessor.onDeviceMessage('Please remove the card.');
     }
@@ -135,7 +137,10 @@ QPOSServiceListenerImpl.prototype.onError = function (msg) {
 }
 QPOSServiceListenerImpl.prototype.onEmvICCExceptionData = function (msg) {
     console.log("onEmvICCExceptionData" + msg);
-    trasactionData.innerText = "onEmvICCExceptionData:" + msg;
+    // Fires alongside DECLINED/TERMINATED with the EMV kernel's own
+    // exception TLV data - length alone (not content, which can include
+    // card-derived tags) is useful to confirm this fired at all.
+    if (window.PaymentProcessor) PaymentProcessor.trace('EMV exception data received', (msg ? msg.length : 0) + ' hex chars');
 }
 QPOSServiceListenerImpl.prototype.onLcdShowCustomDisplay = function(msg){
     console.log("onLcdShowCustomDisplay" + msg);
@@ -228,6 +233,7 @@ QPOSServiceListenerImpl.prototype.onRequestBatchData = function (iccData) {
     // iccData is EMV TLV batch data (can include track-equivalent tags) -
     // logged for debugging only, never shown in the UI.
     console.log("onRequestBatchData received (" + (iccData ? iccData.length : 0) + " chars)");
+    if (window.PaymentProcessor) PaymentProcessor.trace('Device sent final EMV batch data', (iccData ? iccData.length : 0) + ' hex chars');
     mService.getNewICCTag(0,1,'57',function onSuccess(iccResult) {
             console.log("getNewICCTag(57) received");
         } , function onFail(error){
@@ -311,6 +317,18 @@ QPOSServiceListenerImpl.prototype.onReturnGetPinResult = function (value) {
 
 QPOSServiceListenerImpl.prototype.onRequestSetPin = function () {
     console.log("onRequestSetPin: ");
+    // Fires when the card/terminal config requires PIN entry AND the
+    // device has no embedded PIN pad of its own - the host application is
+    // expected to collect a PIN and send it back via mService.sendPin(pin).
+    // This currently does nothing, which means if a test card ever requires
+    // PIN entry, the terminal is left waiting indefinitely for a PIN that
+    // never comes - a very plausible cause of a session abort/timeout. If
+    // the trace log shows this firing before DEVICE_ERROR, that is very
+    // likely the actual root cause, and a real PIN-entry flow (or a test
+    // card that doesn't require PIN CVM) is needed, not a mock/hardcoded
+    // value - sending a fixed PIN would be both a security problem and
+    // likely to fail issuer PIN verification anyway.
+    if (window.PaymentProcessor) PaymentProcessor.trace('Device requested PIN entry', 'not currently handled - see comment in Script.js');
     // mService.sendPin("1234");
     dialog();
 }
