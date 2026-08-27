@@ -373,7 +373,6 @@ a:hover { color: var(--brand-strong); }
 }
 .gx-receipt-serrated {
   height: 14px;
-  background-color: var(--line);
   background-image:
     linear-gradient(135deg, var(--surface) 50%, transparent 50%),
     linear-gradient(45deg, var(--surface) 50%, transparent 50%);

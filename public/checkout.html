@@ -3,482 +3,160 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dspread Web Demo</title>
+  <title>GXPAY POS</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230E7C66'/%3E%3Ctext x='16' y='22' font-family='Arial,sans-serif' font-weight='700' font-size='16' fill='white' text-anchor='middle'%3EGX%3C/text%3E%3C/svg%3E">
 
-  <!-- Google Font: Source Sans Pro -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700&display=fallback">
-  <!-- Font Awesome -->
+  <!-- Fonts: Space Grotesk (display / wordmark / amount), Inter (UI text), IBM Plex Mono (figures & receipt) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <!-- Font Awesome (icons) -->
   <link rel="stylesheet" href="plugins/fontawesome-free/css/all.min.css">
-  <!-- Ionicons -->
-  <link rel="stylesheet" href="https://code.ionicframework.com/ionicons/2.0.1/css/ionicons.min.css">
-  <!-- iCheck -->
-  <link rel="stylesheet" href="plugins/icheck-bootstrap/icheck-bootstrap.min.css">
-  <!-- Theme style -->
-  <link rel="stylesheet" href="dist/css/adminlte.min.css">
-  <!-- overlayScrollbars -->
-  <link rel="stylesheet" href="plugins/overlayScrollbars/css/OverlayScrollbars.min.css">
-  <!--
-    Trimmed for the checkout build: tempusdominus/daterangepicker (date
-    pickers), jqvmap (US map widget), summernote (rich text editor), and
-    jquery-ui aren't used anywhere on this page and were removed along with
-    their plugin folders to keep the deploy lean. Restore from the original
-    AdminLTE template (github.com/ColorlibHQ/AdminLTE) if you build out
-    other admin pages that need them.
-  -->
-  <style>
-    #card-status.status-waiting { background-color: #fff3cd; border-color: #ffe69c; color: #664d03; }
-    #card-status.status-detected { background-color: #d1e7dd; border-color: #a3cfbb; color: #0f5132; }
-    #card-status.status-error { background-color: #f8d7da; border-color: #f1aeb5; color: #842029; }
-    #card-status.status-processing { background-color: #cff4fc; border-color: #9eeaf9; color: #055160; }
-    .receipt-row { display: flex; justify-content: space-between; padding: 2px 0; }
-    .receipt-row .label { color: #6c757d; }
-    @media print {
-      body * { visibility: hidden; }
-      #receipt-panel, #receipt-panel * { visibility: visible; }
-      #receipt-panel { position: absolute; top: 0; left: 0; width: 100%; border: none !important; }
-      #receipt-panel .card-footer { display: none; }
-    }
-  </style>
+  <!-- GXPAY POS design system -->
+  <link rel="stylesheet" href="dist/css/gxpay-pos.css">
 </head>
-<body class="hold-transition sidebar-mini layout-fixed">
-<div class="wrapper">
+<body>
+<div class="gx-app">
 
-  <!-- Preloader -->
-  <div class="preloader flex-column justify-content-center align-items-center">
-    <img class="animation__shake" src="dist/img/favicon.png" alt="dspread" height="60" width="60">
-  </div>
-
-  <!-- Navbar -->
-  <nav class="main-header navbar navbar-expand navbar-white navbar-light">
-    <!-- Left navbar links -->
-    <ul class="navbar-nav">
-      <li class="nav-item">
-        <a class="nav-link" data-widget="pushmenu" href="#" role="button"><i class="fas fa-bars"></i></a>
-      </li>
-      <li class="nav-item d-none d-sm-inline-block">
-        <a href="checkout.html" class="nav-link">Home</a>
-      </li>
-      <li class="nav-item d-none d-sm-inline-block">
-        <a href="javascript:void(0);" class="nav-link" onclick="DiscoveOrDisConnect()" id="UI_Connected">Connect</a>
-      </li>
-      <li class="nav-item d-none d-sm-inline-block" disabled="disabled">
-        <a href="javascript:void(0);" class="nav-link" id="request-device" span style="visibility:hidden">USB Connect</a>
-      </li>
-    </ul>
-
-    <!-- Right navbar links -->
-    <ul class="navbar-nav ml-auto">
-      <!-- Navbar Search -->
-      <li class="nav-item">
-        <a class="nav-link" data-widget="navbar-search" href="#" role="button">
-          <i class="fas fa-search"></i>
-        </a>
-        <div class="navbar-search-block">
-          <form class="form-inline">
-            <div class="input-group input-group-sm">
-              <input class="form-control form-control-navbar" type="search" placeholder="Search" aria-label="Search">
-              <div class="input-group-append">
-                <button class="btn btn-navbar" type="submit">
-                  <i class="fas fa-search"></i>
-                </button>
-                <button class="btn btn-navbar" type="button" data-widget="navbar-search">
-                  <i class="fas fa-times"></i>
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </li>
-
-      <li class="nav-item">
-        <a class="nav-link" data-widget="fullscreen" href="#" role="button">
-          <i class="fas fa-expand-arrows-alt"></i>
-        </a>
-      </li>
-  
-    </ul>
-  </nav>
-  <!-- /.navbar -->
-
-  <!-- Main Sidebar Container -->
-  <aside class="main-sidebar sidebar-dark-primary elevation-4">
-    <!-- Brand Logo -->
-    <div class="brand-link">
-      <img src="dist/img/favicon.png" class="brand-image" style="opacity: .8">
-      <span class="brand-text font-weight-light">Dspread Web Demo</span>
+  <!-- Top bar -->
+  <header class="gx-topbar">
+    <div class="gx-topbar-brand">
+      <span class="gx-wordmark"><span class="gx">GX</span><span class="pos">PAY&nbsp;POS</span></span>
+      <span class="gx-device-tag">CR100-SCRP</span>
     </div>
+    <div class="gx-topbar-actions">
+      <a href="javascript:void(0);" class="gx-pill" onclick="DiscoveOrDisConnect()" id="UI_Connected">Connect</a>
+      <!-- WebUSB device chooser trigger - kept functional, hidden per the original SDK demo's own UX (Bluetooth is the primary path). -->
+      <a href="javascript:void(0);" class="nav-link" id="request-device" style="visibility:hidden; position:absolute;">USB Connect</a>
+      <button type="button" class="gx-icon-btn" onclick="openModal('deviceModal')" title="Device settings" aria-label="Device settings">
+        <i class="fas fa-sliders-h"></i>
+      </button>
+    </div>
+  </header>
 
-    <!-- Sidebar -->
-    <div class="sidebar">
+  <!-- Main checkout -->
+  <main class="gx-main">
+    <div class="gx-terminal">
 
-      <!-- SidebarSearch Form -->
-      <div class="form-inline">
-        <div class="input-group" data-widget="sidebar-search">
-          <input class="form-control form-control-sidebar" type="search" placeholder="Search" aria-label="Search">
-          <div class="input-group-append">
-            <button class="btn btn-sidebar">
-              <i class="fas fa-search fa-fw"></i>
+      <!-- Left: checkout controls -->
+      <section class="gx-panel">
+        <h2 class="gx-panel-title"><i class="fas fa-credit-card"></i>Checkout</h2>
+        <p class="gx-panel-subtitle">Enter an amount, then charge the card on your CR100-SCRP.</p>
+
+        <div id="card-status" class="gx-status" role="status" aria-live="polite">
+          <span class="dot" aria-hidden="true"></span>
+          <span id="card-status-text">Not connected. Tap Connect above to pair your CR100-SCRP.</span>
+        </div>
+
+        <div class="gx-field">
+          <label for="TractionType">Transaction type</label>
+          <select id="TractionType" class="gx-select">
+            <option value="1">Services</option>
+            <option value="10" selected="selected">Sale</option>
+          </select>
+        </div>
+
+        <div class="gx-field">
+          <label for="Amount">Amount</label>
+          <div class="gx-amount-row">
+            <select id="currency_code" class="gx-select" aria-label="Currency">
+              <option value="0566" data-alpha="NGN" selected="selected">NGN</option>
+              <option value="0840" data-alpha="USD">USD</option>
+              <option value="0978" data-alpha="EUR">EUR</option>
+              <option value="0826" data-alpha="GBP">GBP</option>
+              <option value="0156" data-alpha="CNY">CNY</option>
+              <option value="0036" data-alpha="AUD">AUD</option>
+              <option value="0860" data-alpha="UZS">UZS</option>
+              <option value="0704" data-alpha="VND">VND</option>
+            </select>
+            <div class="gx-amount-field">
+              <input type="number" min="0.01" step="0.01" class="gx-amount-input" id="Amount" placeholder="0.00" inputmode="decimal">
+            </div>
+          </div>
+        </div>
+
+        <button type="button" class="gx-btn" id="checkout-btn" onclick="checkout()">
+          <i class="fas fa-lock"></i> Charge card
+        </button>
+        <p class="gx-hint">Tapping Charge tells the CR100-SCRP to accept a card. Insert, swipe, or tap when prompted &mdash; the status above updates live as the card is detected and read.</p>
+      </section>
+
+      <!-- Right: live status + receipt -->
+      <section class="gx-panel">
+        <h2 class="gx-panel-title"><i class="fas fa-stream"></i>Transaction status</h2>
+        <p class="gx-panel-subtitle">Live updates from the card reader and GxPay appear here.</p>
+        <div class="gx-feed" id="result_div">No transaction yet.</div>
+
+        <div class="gx-receipt-wrap" id="receipt-panel">
+          <div class="gx-receipt-print-area">
+            <div class="gx-receipt">
+              <span id="receipt-status-badge" class="gx-receipt-status">&nbsp;</span>
+              <div id="receipt-body"></div>
+            </div>
+            <div class="gx-receipt-serrated" aria-hidden="true"></div>
+          </div>
+          <div class="gx-receipt-actions">
+            <button type="button" class="gx-btn gx-btn-ghost" onclick="PaymentProcessor.printReceipt()">
+              <i class="fas fa-print"></i> Print
+            </button>
+            <button type="button" class="gx-btn gx-btn-ghost" onclick="PaymentProcessor.confirmStatus()">
+              <i class="fas fa-sync"></i> Confirm status
             </button>
           </div>
         </div>
+      </section>
+
+    </div>
+  </main>
+
+  <footer class="gx-footer">GXPAY POS &middot; running on a Dspread CR100-SCRP</footer>
+
+  <!-- Device settings modal: connect/disconnect + info + EMV/firmware management.
+       Kept fully functional, just out of the everyday checkout flow. -->
+  <div class="gx-modal-backdrop" id="deviceModal" role="dialog" aria-labelledby="deviceModalLabel" aria-hidden="true" onclick="if (event.target === this) closeModal('deviceModal')">
+    <div class="gx-modal" role="document">
+      <div class="gx-modal-header">
+        <h5 id="deviceModalLabel">Device settings</h5>
+        <button type="button" class="gx-modal-close" onclick="closeModal('deviceModal')" aria-label="Close">&times;</button>
       </div>
+      <div class="gx-modal-body">
 
-      <!-- Sidebar Menu -->
-      <nav class="mt-2">
-        <ul class="nav nav-pills nav-sidebar flex-column" data-widget="treeview" role="menu" data-accordion="false">
-          <!-- Add icons to the links using the .nav-icon class
-               with font-awesome or any other icon font library -->
-          <li class="nav-item">
-            <a href="#" class="nav-link active">
-              <i class="nav-icon fas fa-credit-card"></i>
-              <p>
-                Transactions
-              </p>
-            </a>
+        <div class="gx-device-group">
+          <h6>Terminal info</h6>
+          <div class="gx-device-actions">
+            <button type="button" class="gx-btn gx-btn-ghost" onclick="getQPosInfo()"><i class="fas fa-info-circle"></i> Get device info</button>
+            <button type="button" class="gx-btn gx-btn-ghost" onclick="getQPosId()"><i class="fas fa-hashtag"></i> Get device ID</button>
+          </div>
+          <div class="gx-device-output" id="div_infoResult">Device info will appear here.</div>
+        </div>
 
-          </li>
-          <li class="nav-item" style="display: none;"> <!-- Terminal Info: hidden from checkout UI, kept in DOM so Script.js's device-info wiring still works -->
-            <a href="#" class="nav-link">
-              <i class="nav-icon fas fa-th"></i>
-              <p>
-                Terminal Info
-                <i class="fas fa-angle-left right"></i>
-              </p>
-            </a>
-            <ul class="nav nav-treeview">
-              <li class="nav-item">
-                <a href="#div_header_info" class="nav-link" onclick="getQPosInfo()">
-                  <i class="far fa-circle nav-icon" ></i>
-                  <p>Get device Info</p>
-                </a>
-              </li>
-              <li class="nav-item">
-                <a href="#div_header_info" class="nav-link" onclick="getQPosId()">
-                  <i class="far fa-circle nav-icon"></i>
-                  <p>Get device ID</p>
-                </a>
-              </li>
-            </ul>
-          </li>
-          <li class="nav-item" style="display: none;"> <!-- Terminal Management: hidden from checkout UI, kept in DOM so Script.js's EMV/firmware update wiring still works -->
-            <a href="#" class="nav-link">
-              <i class="nav-icon fas fa-copy"></i>
-              <p>
-                Terminal Management
-                <i class="fas fa-angle-left right"></i>
-              </p>
-            </a>
-            <ul class="nav nav-treeview">
-              <li class="nav-item">
-                <a href="javascript:void(0);" class="nav-link" onclick="selectEmvFile()">
-                  <i class="far fa-circle nav-icon"></i>
-                  <p>Update EMV Config</p>
-                  <input type="file" id="updateEmvFile" onchange="upload(this)" class="inputFile" hidden/>
-                </a>
-              </li>
-              <li class="nav-item">
-                <a href="#" class="nav-link" onclick="selectFwFile()">
-                  <i class="far fa-circle nav-icon"></i>
-                  <p>Update device Firmware</p>
-                  <input type="file" id="updateFwFile" onchange="upload2(this)" class="inputFile" hidden/>
-                </a>
-              </li>
-              <li class="nav-item">
-                <a href="javascript:void(0);" class="nav-link" onclick="switchToSerial()">
-                  <i class="far fa-circle nav-icon"></i>
-                  <p>Switch to Serial</p>
-                </a>
-              </li>
-            </ul>
-        
-          </li>
+        <div class="gx-device-group">
+          <h6>Terminal management</h6>
+          <div class="gx-device-actions">
+            <button type="button" class="gx-btn gx-btn-ghost" onclick="selectEmvFile()"><i class="fas fa-file-upload"></i> Update EMV config</button>
+            <input type="file" id="updateEmvFile" onchange="upload(this)" class="inputFile" hidden>
+            <button type="button" class="gx-btn gx-btn-ghost" onclick="selectFwFile()"><i class="fas fa-microchip"></i> Update firmware</button>
+            <input type="file" id="updateFwFile" onchange="upload2(this)" class="inputFile" hidden>
+            <button type="button" class="gx-btn gx-btn-ghost" onclick="switchToSerial()"><i class="fas fa-exchange-alt"></i> Switch to serial</button>
+          </div>
+          <div class="gx-device-output" id="div_updateResult">Update progress and results will appear here.</div>
+          <button class="gx-btn mt-2" id="continue-updateEmv" style="display: none;">Continue EMV update</button>
+        </div>
 
-          <!-- <li class="nav-header">CONTACT</li> -->
-
-          <!-- <li class="nav-item">
-            <a href="#" class="nav-link">
-              <i class="nav-icon fas fa-book"></i>
-              <p>
-                Pages
-                <i class="fas fa-angle-left right"></i>
-              </p>
-            </a>
-            <ul class="nav nav-treeview">
-              <li class="nav-item">
-                <a href="#" class="nav-link">
-                  <i class="far fa-circle nav-icon"></i>
-                  <p>FAQ</p>
-                </a>
-              </li>
-              <li class="nav-item" id="contact_li">
-                <a href="#" class="nav-link">
-                  <i class="far fa-circle nav-icon"></i>
-                  <p>Contact us</p>
-                </a>
-              </li>
-            </ul>
-          </li> -->
-
-        </ul>
-      </nav>
-      <!-- /.sidebar-menu -->
+      </div>
+      <div class="gx-modal-footer">
+        <button type="button" class="gx-btn gx-btn-ghost" onclick="closeModal('deviceModal')" style="width:auto;">Close</button>
+      </div>
     </div>
-    <!-- /.sidebar -->
-  </aside>
-
-  <!-- Content Wrapper. Contains page content -->
-  <div class="content-wrapper">
-    <!-- Content Header (Page header) -->
-    <div class="content-header">
-      <div class="container-fluid">
-        <div class="row mb-2">
-          <div class="col-sm-6">
-            <h1 class="m-0">Transactions</h1>
-          </div><!-- /.col -->
-        </div><!-- /.row -->
-      </div><!-- /.container-fluid -->
-    </div>
-    <!-- /.content-header -->
-        <!-- Transaction content -->
-        <section class="content">
-          <div class="container-fluid">
-            <!-- checkout -->
-            <div class="card card-default" id="checkout-card">
-              <div class="card-header">
-                <h3 class="card-title"><i class="fas fa-credit-card mr-1"></i> Checkout &mdash; CR100-SCRP</h3>
-
-                <div class="card-tools">
-                  <button type="button" class="btn btn-tool" data-card-widget="collapse">
-                    <i class="fas fa-minus"></i>
-                  </button>
-                </div>
-              </div>
-
-              <div class="card-body">
-                <div class="row">
-                  <div class="col-md-6">
-
-                    <!-- Card detection / reader status -->
-                    <div class="form-group">
-                      <label>Card Reader Status</label>
-                      <div id="card-status" class="alert alert-secondary d-flex align-items-center mb-3" role="status" aria-live="polite">
-                        <i id="card-status-icon" class="fas fa-plug mr-2"></i>
-                        <span id="card-status-text">Not connected. Click "Connect" in the top navigation bar to pair your CR100-SCRP.</span>
-                      </div>
-                    </div>
-
-                    <!-- /.row -->
-                    <div class="row">
-                      <div class="col-12">
-                        <div class="form-group">
-                          <label>Currency</label>
-                          <select id="currency_code" class="form-control select2" style="width: 100%;">
-                            <option value="0566" data-alpha="NGN" selected="selected">NGN &mdash; Nigerian Naira</option>
-                            <option value="0840" data-alpha="USD">USD &mdash; US Dollar</option>
-                            <option value="0978" data-alpha="EUR">EUR &mdash; Euro</option>
-                            <option value="0826" data-alpha="GBP">GBP &mdash; British Pound</option>
-                            <option value="0156" data-alpha="CNY">CNY &mdash; Chinese Yuan</option>
-                            <option value="0036" data-alpha="AUD">AUD &mdash; Australian Dollar</option>
-                            <option value="0860" data-alpha="UZS">UZS &mdash; Uzbekistani Som</option>
-                            <option value="0704" data-alpha="VND">VND &mdash; Vietnamese Dong</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- /.row -->
-                    <div class="row">
-                      <div class="col-12">
-                        <div class="form-group">
-                          <label>Transaction Type</label>
-                          <select id="TractionType" class="form-control select2 select2-danger" data-dropdown-css-class="select2-danger" style="width: 100%;">
-                            <option value="1">SERVICES</option>
-                            <option value="10" selected="selected">SALE</option>
-                          </select>
-                        </div>
-                        <!-- /.form-group -->
-                      </div>
-                    </div>
-
-                    <!-- /.row amount -->
-                    <div class="row">
-                      <div class="col-12">
-                        <div class="form-group">
-                          <label>Amount</label>
-                          <div class="input-group">
-                            <div class="input-group-prepend">
-                              <span class="input-group-text" id="currency-symbol">NGN</span>
-                            </div>
-                            <input type="number" min="0.01" step="0.01" class="form-control" id="Amount" placeholder="0.00">
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="row">
-                      <div class="col-12">
-                        <button type="button" class="form-control btn btn-primary" id="checkout-btn" onclick="checkout()">
-                          <i class="fas fa-lock mr-1"></i> Checkout / Pay
-                        </button>
-                        <small class="form-text text-muted">
-                          Clicking Checkout tells the CR100-SCRP to accept a card. Insert, swipe, or tap when prompted &mdash; the status above will update as the card is detected and read.
-                        </small>
-                      </div>
-                    </div>
-
-                  </div>
-                  <div class="col-md-6">
-                    <!-- Live device / transaction messages -->
-                    <div class="card card-primary">
-                      <div class="card-header">
-                        <h4 class="card-title w-100">
-                          <a class="d-block w-100" data-toggle="collapse" href="#collapseOne">
-                            Transaction Status
-                          </a>
-                        </h4>
-                      </div>
-                      <div id="collapseOne" class="collapse show" data-parent="#accordion">
-                        <div class="card-body" id="result_div">
-                          <p class="text-muted mb-0">No transaction yet.</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- Receipt, populated after GxPay responds -->
-                    <div class="card card-outline card-secondary" id="receipt-panel" style="display:none;">
-                      <div class="card-header">
-                        <h4 class="card-title">
-                          <span id="receipt-status-badge" class="badge mr-2">&nbsp;</span>
-                          Receipt
-                        </h4>
-                      </div>
-                      <div class="card-body" id="receipt-body"></div>
-                      <div class="card-footer">
-                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="PaymentProcessor.printReceipt()">
-                          <i class="fas fa-print mr-1"></i>Print
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="PaymentProcessor.confirmStatus()">
-                          <i class="fas fa-sync mr-1"></i>Confirm Status
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          </div>
-          <!-- /.container-fluid -->
-
-
-        </section>
-
-        <!-- Terminal Info / Terminal Management: hidden from the checkout UI per request.
-             Kept in the DOM (display:none) rather than deleted, since Script.js grabs
-             references to div_infoResult / div_updateResult / continue-updateEmv at
-             load time and writes into them - removing the elements outright would
-             throw errors from that existing device-management code. -->
-        <div style="display: none;">
-        <div class="content-header" id="div_header_info">
-          <div class="container-fluid">
-            <div class="row mb-2">
-              <div class="col-sm-6">
-                <h1 class="m-0">Terminal Info</h1>
-              </div><!-- /.col -->
-            </div><!-- /.row -->
-          </div><!-- /.container-fluid -->
-        </div>
-        <!-- Info contant -->
-        <section class="content">
-          <div class="card card-default" id="div_terminalInfo">
-            <div class="card-header">
-              <h3 class="card-title">Terminal Info</h3>
-  
-              <div class="card-tools">
-                <button type="button" class="btn btn-tool" data-card-widget="collapse">
-                  <i class="fas fa-minus"></i>
-                </button>
-              </div>
-            </div>
-            <div class="card-body" id="div_infoResult">
-              <h6>There will show the terminal info</h6>
-            </div>
-          </div>
-        </section>
-
-
-       <div class="content-header">
-          <div class="container-fluid">
-            <div class="row mb-2">
-              <div class="col-sm-6">
-                <h1 class="m-0">Terminal Management</h1>
-              </div><!-- /.col -->
-            </div><!-- /.row -->
-          </div><!-- /.container-fluid -->
-        </div>
-         <!-- update contant -->
-         <section class="content">
-          <div class="card card-default" id="div_terminalManagement">
-            <div class="card-header">
-              <h3 class="card-title">Terminal Management</h3>
-  
-              <div class="card-tools">
-                <button type="button" class="btn btn-tool" data-card-widget="collapse">
-                  <i class="fas fa-minus"></i>
-
-                </button>
-              </div>
-            </div>
-            <div class="card-body" id="div_updateResult">
-              <h6>There will show the terminal update process and result</h6>
-            </div>
-            <button class="form-control btn btn-primary" id = "continue-updateEmv" style="display: none; width: 25%; position: absolute; bottom: 0px; right: 0px; ">Update EMV Continue</button>
-          </div>
-        </section>
-        </div>
-        <!-- /Terminal Info / Terminal Management -->
-
-
-    <!-- /.content -->
   </div>
-  <!-- /.content-wrapper -->
-  <footer class="main-footer">
-    <strong>Copyright &copy; 2009-2022 Dspread Technology (Beijing) Inc.</strong>
-    All rights reserved.
-    <div class="float-right d-none d-sm-inline-block">
-      <b>Version</b> 4.1.2
-    </div>
-  </footer>
 
-  <!-- Control Sidebar -->
-  <aside class="control-sidebar control-sidebar-dark">
-    <!-- Control sidebar content goes here -->
-  </aside>
-  <!-- /.control-sidebar -->
 </div>
-<!-- ./wrapper -->
 
-<!-- jQuery -->
-<script src="plugins/jquery/jquery.min.js"></script>
-<!-- Bootstrap 4 -->
-<script src="plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
-<!-- Sparkline -->
-<script src="plugins/sparklines/sparkline.js"></script>
-<!-- overlayScrollbars -->
-<script src="plugins/overlayScrollbars/js/jquery.overlayScrollbars.min.js"></script>
-<!-- AdminLTE App -->
-<script src="./dist/js/adminlte.js"></script>
-<!-- AdminLTE for demo purposes -->
-<script src="./dist/js/demo.js"></script>
-<!--
-  dashboard.js (sortable widgets, charts, summernote, daterangepicker) was
-  the generic AdminLTE dashboard demo boilerplate - none of that exists on
-  this checkout page and it depended on plugins removed above, so it's
-  dropped rather than left in as dead weight that errors on load.
--->
+<!-- Dspread CR100-SCRP SDK -->
 <script src="./dist/js/main.js"></script>
 <script src="./dist/js/Script.js"></script>
 <!-- GxPay checkout / payment processing -->
 <script src="./dist/js/paymentProcessor.js"></script>
+<!-- Device settings modal controller -->
+<script src="./dist/js/uiModal.js"></script>
 </body>
 </html>
