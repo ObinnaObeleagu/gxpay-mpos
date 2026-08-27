@@ -137,7 +137,7 @@
             </a>
 
           </li>
-          <li class="nav-item">
+          <li class="nav-item" style="display: none;"> <!-- Terminal Info: hidden from checkout UI, kept in DOM so Script.js's device-info wiring still works -->
             <a href="#" class="nav-link">
               <i class="nav-icon fas fa-th"></i>
               <p>
@@ -160,7 +160,7 @@
               </li>
             </ul>
           </li>
-          <li class="nav-item">
+          <li class="nav-item" style="display: none;"> <!-- Terminal Management: hidden from checkout UI, kept in DOM so Script.js's EMV/firmware update wiring still works -->
             <a href="#" class="nav-link">
               <i class="nav-icon fas fa-copy"></i>
               <p>
@@ -292,28 +292,8 @@
                         <div class="form-group">
                           <label>Transaction Type</label>
                           <select id="TractionType" class="form-control select2 select2-danger" data-dropdown-css-class="select2-danger" style="width: 100%;">
-                            <option value="0">GOODS</option>
                             <option value="1">SERVICES</option>
-                            <option value="2">CASH</option>
-                            <option value="3">CASHBACK</option>
-                            <option value="4">INQUIRY</option>
-                            <option value="5">TRANSFER</option>
-                            <option value="6">ADMIN</option>
-                            <option value="7">CASHDEPOSIT</option>
-                            <option value="8">PAYMENT</option>
-                            <option value="9">PBOCLOG||ECQ_INQUIRE_LOG</option>
                             <option value="10" selected="selected">SALE</option>
-                            <option value="11">PREAUTH</option>
-                            <option value="12">ECQ_DESIGNATED_LOAD</option>
-                            <option value="13">ECQ_UNDESIGNATED_LOAD</option>
-                            <option value="14">ECQ_CASH_LOAD</option>
-                            <option value="15">ECQ_CASH_LOAD_VOID</option>
-                            <option value="16">CHANGE_PIN</option>
-                            <option value="17">REFOUND</option>
-                            <option value="18">SALES_NEW</option>
-                            <option value="19">LEGACY_MONEY_ADD</option>
-                            <option value="20">NON_LEGACY_MONEY_ADD</option>
-                            <option value="21">BALANCE_UPDATE</option>
                           </select>
                         </div>
                         <!-- /.form-group -->
@@ -393,6 +373,12 @@
 
         </section>
 
+        <!-- Terminal Info / Terminal Management: hidden from the checkout UI per request.
+             Kept in the DOM (display:none) rather than deleted, since Script.js grabs
+             references to div_infoResult / div_updateResult / continue-updateEmv at
+             load time and writes into them - removing the elements outright would
+             throw errors from that existing device-management code. -->
+        <div style="display: none;">
         <div class="content-header" id="div_header_info">
           <div class="container-fluid">
             <div class="row mb-2">
@@ -432,7 +418,7 @@
         </div>
          <!-- update contant -->
          <section class="content">
-          <div class="card card-default" id="div_terminalInfo">
+          <div class="card card-default" id="div_terminalManagement">
             <div class="card-header">
               <h3 class="card-title">Terminal Management</h3>
   
@@ -449,6 +435,8 @@
             <button class="form-control btn btn-primary" id = "continue-updateEmv" style="display: none; width: 25%; position: absolute; bottom: 0px; right: 0px; ">Update EMV Continue</button>
           </div>
         </section>
+        </div>
+        <!-- /Terminal Info / Terminal Management -->
 
 
     <!-- /.content -->
