@@ -118,8 +118,17 @@ QPOSServiceListenerImpl.prototype.onRequestTransactionResult = function (msg) {
     console.log("onRequestTransactionResult: " + msg);
     if (!window.PaymentProcessor) return;
     if (msg === "APPROVED") {
-        // The online-authorized path already shows GxPay's own result via
-        // onOnlineAuthorizationRequest/onTradeComplete - nothing extra needed.
+        // This is the terminal's OWN final confirmation that a chip
+        // transaction completed (confirmed via real-device trace logs -
+        // fires well after onOnlineAuthorizationRequest already got a
+        // result from GxPay, once the card's cryptogram exchange finishes).
+        // A prior version of this code assumed onDoTradeResult("ICC") had
+        // already rendered the receipt by this point and did nothing here -
+        // that assumption was wrong (onDoTradeResult("ICC") actually fires
+        // much earlier, before GxPay is even called), which left the UI
+        // stuck showing "Authorizing..." even after a genuinely successful,
+        // approved payment.
+        PaymentProcessor.onTransactionApproved();
         return;
     }
     PaymentProcessor.onDeviceError(

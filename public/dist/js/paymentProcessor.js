@@ -9,7 +9,7 @@
  * wiring - connect, EMV config updates, firmware updates, etc.) so the
  * payment flow is easy to find and audit on its own.
  *
- * Script.js calls into this module at four points (see the edits in
+ * Script.js calls into this module at these points (see the edits in
  * Script.js's QPOSServiceListenerImpl.prototype.* handlers):
  *
  *   onRequestWaitingUser   -> PaymentProcessor.onWaitingForCard()
@@ -20,6 +20,21 @@
  *                             contacted a gateway at all)
  *   onDoTradeResult (MCR / NFC_ONLINE) -> PaymentProcessor.onCardRead(entryMode, trackFields)
  *   onDoTradeResult (ICC)              -> PaymentProcessor.onTradeComplete('ICC')
+ *                             CAUTION: despite the SDK's naming, this fires
+ *                             the moment a chip is first detected - BEFORE
+ *                             EMV processing even starts, not after. It is
+ *                             not the transaction's real completion signal
+ *                             for ICC - see onRequestTransactionResult below.
+ *   onRequestTransactionResult('APPROVED') -> PaymentProcessor.onTransactionApproved()
+ *                             This is the ACTUAL final completion signal for
+ *                             a chip transaction (confirmed via real-device
+ *                             trace logs) - it fires once the terminal has
+ *                             finished its cryptogram exchange with the card,
+ *                             well after onOnlineAuthorizationRequest already
+ *                             got a result from GxPay. Every other outcome
+ *                             (DECLINED/TERMINATED/CANCEL/DEVICE_ERROR) comes
+ *                             through the same callback and is handled in
+ *                             Script.js via PaymentProcessor.onDeviceError().
  *
  * Card data handling: this module never puts a full PAN, full track, or PIN
  * block into the DOM. Only entryMode + already-encrypted material (KSN +
@@ -274,16 +289,40 @@
   }
 
   /**
-   * ICC transactions finish here (after onOnlineAuthorizationRequest already
-   * ran and the chip completed its cryptogram exchange). We already have the
-   * GxPay result from that step - just render it now that the device
-   * confirms the transaction is done.
+   * Fires the moment a chip is first detected, well before EMV processing
+   * or GxPay authorization even starts - despite the SDK naming this
+   * "onDoTradeResult(ICC)", it is NOT the transaction's completion signal.
+   * Confirmed via real-device trace logs: this fires ~7-15s before GxPay is
+   * even called. Kept as a trace point only - state.lastResult is always
+   * null here, so there is nothing to render yet. See onTransactionApproved()
+   * for the real completion path.
    */
   function onTradeComplete(entryMode) {
-    trace('Device reports trade complete', entryMode);
     if (entryMode !== 'ICC') return;
+    trace('Chip detected, entering EMV kernel', 'not the completion signal - see onTransactionApproved()');
+  }
+
+  /**
+   * The terminal's own final confirmation that a chip transaction actually
+   * completed (fires from onRequestTransactionResult('APPROVED') in
+   * Script.js, after the card's cryptogram exchange finishes). GxPay's
+   * result was already obtained and stored back in
+   * onOnlineAuthorizationRequest - this just renders it now that the device
+   * confirms the EMV exchange genuinely finished, rather than assuming it
+   * was already shown (an earlier version of this code made that wrong
+   * assumption and silently left the UI stuck on "Authorizing..." even
+   * though the payment had actually succeeded).
+   */
+  function onTransactionApproved() {
+    trace('Device confirms transaction complete', 'APPROVED');
     if (state.lastResult) {
       renderReceiptFromResult(state.lastResult);
+    } else {
+      // Shouldn't happen - the device confirmed approval but we have no
+      // stored GxPay result to show. Surface it rather than staying silent.
+      setCardStatus('error', 'Device confirmed approval, but no payment result was recorded.');
+      trace('No stored result to render', 'check onOnlineAuthorizationRequest - this should not happen');
+      resetCheckoutButton();
     }
   }
 
@@ -419,16 +458,61 @@
     window.print();
   }
 
+  /**
+   * Downloads the current receipt as a branded PDF (server-rendered - see
+   * lib/receiptPdf.js). Uses a temporary off-screen link + programmatic
+   * click, the standard technique for triggering a same-origin file
+   * download without navigating the page away from the checkout screen.
+   * The backend sets Content-Disposition: attachment, so the browser saves
+   * it straight to the user's downloads location - no client-side PDF
+   * library needed.
+   */
+  function downloadReceiptPdf() {
+    if (!state.pending || !state.pending.reference) return;
+    const btn = $('download-receipt-btn');
+    const reference = state.pending.reference;
+    trace('Downloading receipt PDF', reference);
+    if (btn) btn.disabled = true;
+
+    fetch(`/api/payments/${encodeURIComponent(reference)}/receipt.pdf`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.message || `PDF download failed (HTTP ${res.status})`);
+        }
+        return res.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `gxpay-receipt-${reference}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        trace('Receipt PDF saved', `gxpay-receipt-${reference}.pdf`);
+      })
+      .catch((err) => {
+        trace('Could not download receipt PDF', err.message);
+      })
+      .finally(() => {
+        if (btn) btn.disabled = false;
+      });
+  }
+
   // ---- public API ------------------------------------------------------------
   global.PaymentProcessor = {
     onWaitingForCard,
     onOnlineAuthorizationRequest,
     onCardRead,
     onTradeComplete,
+    onTransactionApproved,
     onDeviceError,
     onDeviceMessage,
     confirmStatus,
     printReceipt,
+    downloadReceiptPdf,
     trace, // exposed so Script.js can log raw device/protocol events too
   };
   global.checkout = checkout;

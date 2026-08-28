@@ -6,6 +6,7 @@ const config = require('../config/env');
 const gxpay = require('../services/gxpayClient');
 const store = require('../store/transactionStore');
 const { validateDevicePayload, maskAmountReceiptCard } = require('../lib/cardPayload');
+const { renderReceiptPdf } = require('../lib/receiptPdf');
 
 const router = express.Router();
 
@@ -128,6 +129,34 @@ router.get('/:reference/status', async (req, res) => {
     return res.status(404).json({ status: 'error', message: 'Unknown reference' });
   }
   return res.json({ status: local.status, reference, receipt: local.receipt || null, source: 'local' });
+});
+
+/**
+ * GET /api/payments/:reference/receipt.pdf
+ * Generates and downloads a branded PDF of a completed transaction's
+ * receipt. Only serves transactions that actually have a stored receipt
+ * (i.e. the charge attempt got at least as far as a gateway response) -
+ * still-pending or unknown references get a plain error, not a PDF.
+ */
+router.get('/:reference/receipt.pdf', async (req, res) => {
+  const { reference } = req.params;
+  const record = store.get(reference);
+
+  if (!record || !record.receipt) {
+    return res.status(404).json({ status: 'error', message: 'No receipt available for this reference' });
+  }
+
+  try {
+    const pdfBuffer = await renderReceiptPdf(record.receipt);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="gxpay-receipt-${reference}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    return res.send(pdfBuffer);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[payments/receipt.pdf] generation failed:', err.message);
+    return res.status(500).json({ status: 'error', message: 'Failed to generate receipt PDF' });
+  }
 });
 
 /**

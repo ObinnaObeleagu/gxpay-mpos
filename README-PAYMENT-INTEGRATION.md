@@ -238,6 +238,28 @@ been committed when the project was first pushed to a new repo - double
 check every one of `config/`, `routes/`, `services/`, `store/`, `lib/`,
 `public/` shows up when you browse the repo on GitHub.
 
+## Branding
+
+The checkout UI, receipt panel, favicon, and downloadable PDF receipt all use
+the GXPAY logo (`public/dist/img/gxpay-logo.png`) and the brand's actual
+navy/coral palette (sampled from the logo - see the `:root` custom
+properties at the top of `public/dist/css/gxpay-pos.css`). Semantic
+approved/declined colors are kept as conventional green/red rather than
+brand colors, since that distinction matters more for usability than visual
+consistency.
+
+## Receipt PDF export
+
+Every completed transaction can be downloaded as a branded PDF receipt -
+click **PDF** in the receipt panel. This calls `GET
+/api/payments/:reference/receipt.pdf` (`lib/receiptPdf.js`, built with
+`pdfkit`), which renders the same data shown on screen - logo, status badge,
+merchant/terminal/reference/amount/masked card/auth code/RRN - and returns
+it with `Content-Disposition: attachment` so the browser saves it directly,
+no client-side PDF library needed. Only references with a stored receipt
+(i.e. the charge attempt got at least as far as a gateway response) can be
+downloaded; unknown/pending references return a 404.
+
 ## Testing without hardware
 
 `scripts/smoke-test.js` exercises the exact flow you described - card
@@ -397,19 +419,43 @@ check:
    scrutinize - though it's currently confirmed against three independent
    Dspread reference SDKs (Android, iOS, and the original readMe) sending
    exactly `8A02<code>` with nothing appended.
-4. **RESOLVED on one real device:** an earlier version of `checkout()`
-   called `mService.resetPosStatus()` before every new charge, as a
-   precaution against stale session state from a prior incomplete
-   transaction. Trace log evidence showed this backfiring: the reset's own
-   acknowledgment comes back through the SDK's generic response dispatcher
-   as `onError(DEVICE_RESET)`, and the very next command (`doTrade()`,
-   fired only 200ms later) was landing while the device was still settling
-   from that reset - triggering `CMDID_DESTRUCT` ("DEVICE_ERROR") almost
-   immediately, before a card could even be presented. The reset call has
-   been removed - `doTrade()` is called directly, matching the original
-   stock demo's proven-working behavior. If you still see `DEVICE_ERROR`
-   after this fix, it's a different cause - work through items 1-3 above
-   with a fresh trace log.
+4. **RESOLVED on one real device (DEVICE_ERROR, wrong cause):** an earlier
+   version of `checkout()` called `mService.resetPosStatus()` before every
+   new charge, as a precaution against stale session state from a prior
+   incomplete transaction. Trace log evidence showed this backfiring: the
+   reset's own acknowledgment comes back through the SDK's generic response
+   dispatcher as `onError(DEVICE_RESET)`, and the very next command
+   (`doTrade()`, fired only 200ms later) was landing while the device was
+   still settling from that reset - triggering `CMDID_DESTRUCT`
+   ("DEVICE_ERROR") almost immediately, before a card could even be
+   presented. The reset call has been removed - `doTrade()` is called
+   directly, matching the original stock demo's proven-working behavior.
+5. **RESOLVED (real root cause on that device): missing/wrong EMV
+   configuration.** `DEVICE_ERROR` on insert, while swipe/tap worked fine,
+   pointed at the EMV kernel specifically (swipe/tap never touch it - see
+   "How chip vs. swipe/tap differ" above). The device had no CR100-SCRP-
+   specific AID/CAPK configuration loaded. Loading the *correct* profile
+   (from Dspread, matched to this exact terminal - **not** a generic or
+   other-vendor EMV profile; a profile built for a different terminal
+   model/vendor can *load* without erroring, since the uploader here just
+   structurally parses TLV entries and doesn't validate vendor-specific
+   proprietary tags, but produces a kernel configuration that doesn't
+   actually work) resolved it completely - full chip transactions now
+   complete end to end.
+6. **RESOLVED: receipt never appeared / status stuck on "Authorizing..."
+   despite a genuinely approved payment.** Real trace logs from a working
+   transaction revealed a second bug once #5 was fixed: `onDoTradeResult`
+   fires with `"ICC"` the moment a chip is first *detected* - well before
+   EMV processing or GxPay authorization even start, despite the SDK's
+   naming suggesting otherwise. The code was wrongly treating that early
+   event as the transaction's completion signal, so the receipt-rendering
+   code ran too early (before GxPay had even been called) and never ran
+   again. The **actual** completion signal for a chip transaction is
+   `onRequestTransactionResult('APPROVED')`, which fires later, once the
+   card's cryptogram exchange genuinely finishes - `paymentProcessor.js` now
+   renders the receipt from there instead (`onTransactionApproved()`),
+   using the GxPay result already stored during the online-authorization
+   step.
 
 ## What's intentionally not solved here
 
