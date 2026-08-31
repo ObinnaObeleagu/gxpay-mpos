@@ -131,6 +131,25 @@ QPOSServiceListenerImpl.prototype.onRequestTransactionResult = function (msg) {
         PaymentProcessor.onTransactionApproved();
         return;
     }
+    // NFC_TERMINATED: confirmed via real-device testing (small amount
+    // approved fine via tap, a larger one hit this) - this is the
+    // terminal's contactless kernel enforcing a Contactless Transaction
+    // Limit (CTL), standard EMV behavior across card networks: above a
+    // configured amount, tap-to-pay is intentionally refused and chip+PIN
+    // is required instead. Not an error to "fix" - just needs a clear,
+    // actionable message instead of the raw device code. The raw code is
+    // still traced first, so the technical detail isn't lost for future
+    // debugging - only the customer-facing status message is simplified.
+    if (msg === "NFC_TERMINATED") {
+        if (window.PaymentProcessor.trace) {
+            PaymentProcessor.trace('Device event: declined', 'NFC_TERMINATED (contactless transaction limit likely exceeded)');
+        }
+        PaymentProcessor.onDeviceError(
+            'declined',
+            'Amount too high for tap. Please insert the card instead.'
+        );
+        return;
+    }
     PaymentProcessor.onDeviceError(
         'declined',
         msg === "DECLINED" ? 'Card declined (offline - not sent to GxPay).' : `Transaction ended: ${msg}`

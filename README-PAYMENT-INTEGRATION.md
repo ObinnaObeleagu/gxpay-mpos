@@ -456,6 +456,21 @@ check:
    renders the receipt from there instead (`onTransactionApproved()`),
    using the GxPay result already stored during the online-authorization
    step.
+7. **RESOLVED: NFC/tap transactions fail with `NFC_TERMINATED` above a
+   certain amount, while smaller tap amounts and all chip transactions
+   work fine.** This is **not a bug** - confirmed via real-device testing
+   (₦100 approved cleanly via tap with a full GxPay round trip; ₦9,000 with
+   the same card hit `NFC_TERMINATED` before the device ever handed card
+   data to the app - no "card read" trace line at all, meaning the
+   termination happens inside the terminal's own contactless kernel,
+   before reaching any of this app's code). This is standard EMV behavior:
+   card networks intentionally cap contactless ("tap to pay") transactions
+   below a Contactless Transaction Limit and require chip+PIN above it, for
+   security. `Script.js`'s `onRequestTransactionResult` now shows a clear,
+   actionable message for this specific code ("Amount too high for tap.
+   Please insert the card instead.") instead of the raw device code - the
+   technical detail is still traced first, so it's not lost for future
+   debugging.
 
 ## What's intentionally not solved here
 
