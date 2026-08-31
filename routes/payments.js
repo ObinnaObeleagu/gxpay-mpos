@@ -35,6 +35,36 @@ function buildReceipt({ reference, amount, currency, result, device }) {
 }
 
 /**
+ * GET /api/payments
+ * Lists stored transactions, most recent first - powers the Transactions
+ * tab. Query params: status (approved|declined|pending|error) to filter,
+ * limit (default 100, max 500). Returns summaries only (not full receipts)
+ * to keep the payload light - the UI fetches full receipt detail per
+ * transaction via GET /:reference/status when the user views/reprints one.
+ */
+router.get('/', (req, res) => {
+  const { status } = req.query;
+  const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+  const records = store.list({ status }).slice(0, limit);
+
+  const transactions = records.map((r) => ({
+    reference: r.reference,
+    status: r.status,
+    amount: r.amount,
+    currency: r.currency,
+    entryMode: (r.device && r.device.entryMode) || (r.receipt && r.receipt.entryMode) || null,
+    card: (r.receipt && r.receipt.card) || (r.device && r.device.maskedPan) || null,
+    cardScheme: (r.receipt && r.receipt.cardScheme) || null,
+    authCode: (r.receipt && r.receipt.authCode) || null,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    hasReceipt: !!r.receipt,
+  }));
+
+  return res.json({ status: 'ok', count: transactions.length, transactions });
+});
+
+/**
  * POST /api/payments/charge
  * Body: { amount, currency, reference?, device: { entryMode, maskedPan, ksn,
  *         encryptedTrack2?, encryptedPinBlock?, emvTags?, model, serial } }

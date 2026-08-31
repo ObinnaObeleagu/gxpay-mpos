@@ -260,6 +260,29 @@ no client-side PDF library needed. Only references with a stored receipt
 (i.e. the charge attempt got at least as far as a gateway response) can be
 downloaded; unknown/pending references return a 404.
 
+## Transactions tab
+
+The **Transactions** tab (next to Checkout) lists every transaction the
+backend has recorded (`GET /api/payments`, `store/transactionStore.js`),
+most recent first, with an optional status filter. Clicking **View** on any
+row opens the same receipt UI as the live checkout flow, with two actions:
+
+- **Reprint** - triggers the browser print dialog (`window.print()`),
+  reusing the exact same print-only CSS (`.gx-receipt-print-area`) as a
+  live checkout receipt
+- **PDF** - re-downloads the receipt PDF via the existing `GET
+  /api/payments/:reference/receipt.pdf` endpoint - no new PDF-generation
+  code, this is the same route the live checkout's "PDF" button already
+  used
+
+No new backend capability was needed for reprint/reissue beyond the list
+endpoint itself - both actions reuse routes that already existed for the
+live checkout flow. As with the rest of this project,
+`store/transactionStore.js` is in-memory and resets on restart/redeploy -
+the Transactions tab will only show what's happened since the server last
+restarted, until you swap in a real database (see the note already in that
+file).
+
 ## Testing without hardware
 
 `scripts/smoke-test.js` exercises the exact flow you described - card

@@ -36,8 +36,18 @@
     </div>
   </header>
 
+  <!-- Tabs -->
+  <nav class="gx-tabs" role="tablist" aria-label="Sections">
+    <button type="button" class="gx-tab active" id="tab-checkout" role="tab" aria-selected="true" onclick="Transactions.switchTab('checkout')">
+      <i class="fas fa-credit-card"></i> Checkout
+    </button>
+    <button type="button" class="gx-tab" id="tab-transactions" role="tab" aria-selected="false" onclick="Transactions.switchTab('transactions')">
+      <i class="fas fa-receipt"></i> Transactions
+    </button>
+  </nav>
+
   <!-- Main checkout -->
-  <main class="gx-main">
+  <main class="gx-main" id="checkout-view">
     <div class="gx-terminal">
 
       <!-- Left: checkout controls -->
@@ -115,6 +125,50 @@
     </div>
   </main>
 
+  <!-- Transactions -->
+  <main class="gx-main" id="transactions-view" style="display:none;">
+    <div class="gx-terminal gx-terminal-wide">
+      <section class="gx-panel gx-panel-wide">
+        <div class="gx-tx-header">
+          <div>
+            <h2 class="gx-panel-title"><i class="fas fa-receipt"></i>Transactions</h2>
+            <p class="gx-panel-subtitle">All transactions processed on this server. View a receipt to reprint or re-download it.</p>
+          </div>
+          <div class="gx-tx-controls">
+            <select id="tx-filter" class="gx-select" aria-label="Filter by status" onchange="Transactions.setFilter(this.value)">
+              <option value="">All statuses</option>
+              <option value="approved">Approved</option>
+              <option value="declined">Declined</option>
+              <option value="pending">Pending</option>
+              <option value="error">Error</option>
+            </select>
+            <button type="button" class="gx-btn gx-btn-ghost" style="width:auto;" onclick="Transactions.load()">
+              <i class="fas fa-sync"></i> Refresh
+            </button>
+          </div>
+        </div>
+
+        <div class="gx-table-wrap">
+          <table class="gx-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Reference</th>
+                <th>Amount</th>
+                <th>Card</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="transactions-tbody">
+              <tr><td colspan="6" class="gx-table-empty">Loading&hellip;</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
   <footer class="gx-footer">GXPAY POS &middot; running on a Dspread CR100-SCRP</footer>
 
   <!-- Device settings modal: connect/disconnect + info + EMV/firmware management.
@@ -158,6 +212,39 @@
     </div>
   </div>
 
+  <!-- Transaction receipt modal: view/reprint/re-download a past transaction's
+       receipt from the Transactions tab. Reuses the same receipt styling as
+       the live checkout receipt; only the container/IDs differ so the two
+       don't clash (and so re-viewing a past transaction never touches the
+       in-progress checkout state). -->
+  <div class="gx-modal-backdrop" id="transactionReceiptModal" role="dialog" aria-labelledby="txReceiptModalLabel" aria-hidden="true" onclick="if (event.target === this) closeModal('transactionReceiptModal')">
+    <div class="gx-modal" role="document">
+      <div class="gx-modal-header">
+        <h5 id="txReceiptModalLabel">Receipt</h5>
+        <button type="button" class="gx-modal-close" onclick="closeModal('transactionReceiptModal')" aria-label="Close">&times;</button>
+      </div>
+      <div class="gx-modal-body">
+        <div class="gx-receipt-print-area">
+          <div class="gx-receipt">
+            <img src="dist/img/gxpay-logo.png" alt="GXPAY" class="gx-receipt-logo" width="130" height="45">
+            <span id="tx-receipt-status-badge" class="gx-receipt-status">&nbsp;</span>
+            <div id="tx-receipt-body"></div>
+          </div>
+          <div class="gx-receipt-serrated" aria-hidden="true"></div>
+        </div>
+      </div>
+      <div class="gx-modal-footer gx-receipt-actions">
+        <button type="button" class="gx-btn gx-btn-ghost" id="tx-receipt-download-btn" onclick="Transactions.downloadCurrentReceiptPdf()">
+          <i class="fas fa-file-pdf"></i> PDF
+        </button>
+        <button type="button" class="gx-btn gx-btn-ghost" id="tx-receipt-print-btn" onclick="Transactions.printCurrentReceipt()">
+          <i class="fas fa-print"></i> Reprint
+        </button>
+        <button type="button" class="gx-btn gx-btn-ghost" onclick="closeModal('transactionReceiptModal')" style="width:auto;">Close</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Dspread CR100-SCRP SDK -->
@@ -167,5 +254,7 @@
 <script src="./dist/js/paymentProcessor.js"></script>
 <!-- Device settings modal controller -->
 <script src="./dist/js/uiModal.js"></script>
+<!-- Transactions tab: list, view, reprint/re-download receipts -->
+<script src="./dist/js/transactions.js"></script>
 </body>
 </html>

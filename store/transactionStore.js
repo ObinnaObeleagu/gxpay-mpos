@@ -28,4 +28,15 @@ function update(reference, patch) {
   return updated;
 }
 
-module.exports = { save, get, update };
+/**
+ * Returns all stored transactions, most recent first - powers the
+ * Transactions tab (GET /api/payments in routes/payments.js). Optional
+ * filters: { status } to narrow to approved/declined/pending/error.
+ */
+function list({ status } = {}) {
+  const all = Array.from(transactions.values());
+  const filtered = status ? all.filter((t) => t.status === status) : all;
+  return filtered.sort((a, b) => new Date(b.createdAt || b.updatedAt) - new Date(a.createdAt || a.updatedAt));
+}
+
+module.exports = { save, get, update, list };

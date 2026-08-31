@@ -509,6 +509,110 @@ a:hover { color: var(--brand-strong); }
   padding: 18px 20px 26px;
 }
 
+/* ---------- tabs ---------- */
+
+.gx-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.gx-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 13px 6px;
+  margin-bottom: -1px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.gx-tab + .gx-tab { margin-left: 18px; }
+.gx-tab i { font-size: 12px; }
+.gx-tab:hover { color: var(--ink); }
+.gx-tab.active { color: var(--brand); border-bottom-color: var(--brand); }
+
+/* ---------- transactions table ---------- */
+
+.gx-terminal-wide { max-width: 1100px; grid-template-columns: 1fr; }
+
+.gx-tx-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.gx-tx-controls { display: flex; gap: 8px; align-items: center; }
+.gx-tx-controls .gx-select { width: auto; min-width: 150px; }
+
+.gx-table-wrap { overflow-x: auto; }
+
+.gx-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.gx-table th {
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.gx-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.gx-table tbody tr:last-child td { border-bottom: none; }
+.gx-table tbody tr:hover { background: var(--paper); }
+.gx-table-mono { font-family: var(--font-mono); font-size: 12px; }
+.gx-table-empty {
+  text-align: center;
+  color: var(--ink-soft);
+  padding: 32px 12px !important;
+  white-space: normal !important;
+}
+.gx-table-actions { text-align: right; }
+
+.gx-table-badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.gx-table-badge.approved { background: var(--success-tint); color: var(--success); }
+.gx-table-badge.declined,
+.gx-table-badge.error { background: var(--danger-tint); color: var(--danger); }
+.gx-table-badge.pending { background: var(--accent-tint); color: var(--accent); }
+
+.gx-btn-link {
+  background: none;
+  border: none;
+  color: var(--brand);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 2px;
+}
+.gx-btn-link:hover { color: var(--brand-strong); text-decoration: underline; }
+.gx-btn-link:disabled { color: var(--ink-soft); cursor: not-allowed; text-decoration: none; opacity: 0.6; }
+
 /* ---------- print (receipt only) ---------- */
 
 @media print {
