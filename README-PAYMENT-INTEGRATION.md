@@ -322,6 +322,27 @@ tab's list and receipt modal, and the downloadable/printable PDF
 no description, exactly like before this feature existed - nothing about
 the existing flow changed for that case.
 
+## PIN entry modal
+
+`onRequestSetPin()` fires when a chip transaction needs a PIN and the
+terminal has no embedded PIN pad of its own. The original stock demo
+handled this with `dialog()` - the browser's native `window.prompt()`,
+pre-filled with a hardcoded `"123456"` default. Beyond looking out of place,
+that had two real problems: the PIN displayed in **plain, unmasked text**,
+and the hardcoded default could get submitted by accident if someone just
+hit Enter without clearing it first.
+
+Replaced with a proper branded modal (`#pinModal` in `checkout.html`) - a
+masked (`type="password"`) input plus an on-screen numeric keypad, styled
+to match the rest of the app. Verified in a real browser: the field starts
+empty (no default to accidentally submit), the entered value never appears
+anywhere in the trace log (only a `*`-masked length is traced), real
+keyboard typing works alongside the on-screen keypad, and Cancel calls
+`mService.sendPin("")` rather than leaving the terminal with no response at
+all - confirmed against `main.js` that an empty string is an intentional,
+distinct "no PIN provided" signal the SDK already supports, not an
+undefined edge case.
+
 ## Transactions tab
 
 The **Transactions** tab (next to Checkout) lists every transaction the

@@ -323,6 +323,52 @@
     </div>
   </div>
 
+  <!-- PIN entry modal - replaces the original stock demo's native
+       window.prompt() dialog (which showed the PIN in plain unmasked text
+       and pre-filled a hardcoded "123456" default). Fires from
+       Script.js's onRequestSetPin() via PaymentProcessor.onPinRequested()
+       whenever the terminal needs the host app to collect a PIN (i.e. it
+       has no embedded PIN pad of its own). -->
+  <div class="gx-modal-backdrop" id="pinModal" role="dialog" aria-labelledby="pinModalLabel" aria-hidden="true">
+    <div class="gx-modal gx-pin-modal" role="document">
+      <div class="gx-modal-header">
+        <h5 id="pinModalLabel"><i class="fas fa-lock"></i> Enter PIN</h5>
+      </div>
+      <div class="gx-modal-body">
+        <p class="gx-pin-subtitle">Hand the device to the cardholder to enter their PIN.</p>
+        <input
+          type="password"
+          id="pin-input"
+          class="gx-pin-display"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          maxlength="12"
+          autocomplete="off"
+          aria-label="PIN"
+          onkeydown="if (event.key === 'Enter') PaymentProcessor.submitPin();"
+        >
+        <div class="gx-pin-keypad">
+          <button type="button" class="gx-pin-key" onclick="PaymentProcessor.pinKeyPress('1')">1</button>
+          <button type="button" class="gx-pin-key" onclick="PaymentProcessor.pinKeyPress('2')">2</button>
+          <button type="button" class="gx-pin-key" onclick="PaymentProcessor.pinKeyPress('3')">3</button>
+          <button type="button" class="gx-pin-key" onclick="PaymentProcessor.pinKeyPress('4')">4</button>
+          <button type="button" class="gx-pin-key" onclick="PaymentProcessor.pinKeyPress('5')">5</button>
+          <button type="button" class="gx-pin-key" onclick="PaymentProcessor.pinKeyPress('6')">6</button>
+          <button type="button" class="gx-pin-key" onclick="PaymentProcessor.pinKeyPress('7')">7</button>
+          <button type="button" class="gx-pin-key" onclick="PaymentProcessor.pinKeyPress('8')">8</button>
+          <button type="button" class="gx-pin-key" onclick="PaymentProcessor.pinKeyPress('9')">9</button>
+          <button type="button" class="gx-pin-key gx-pin-key-muted" onclick="PaymentProcessor.pinKeyClear()">Clear</button>
+          <button type="button" class="gx-pin-key" onclick="PaymentProcessor.pinKeyPress('0')">0</button>
+          <button type="button" class="gx-pin-key gx-pin-key-muted" onclick="PaymentProcessor.pinKeyBackspace()" aria-label="Backspace">&larr;</button>
+        </div>
+      </div>
+      <div class="gx-modal-footer">
+        <button type="button" class="gx-btn gx-btn-ghost" id="pin-cancel-btn" onclick="PaymentProcessor.cancelPin()" style="width:auto;">Cancel</button>
+        <button type="button" class="gx-btn" id="pin-submit-btn" onclick="PaymentProcessor.submitPin()" style="width:auto;">Confirm</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Dspread CR100-SCRP SDK -->

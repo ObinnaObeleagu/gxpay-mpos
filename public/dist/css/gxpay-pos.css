@@ -641,6 +641,46 @@ a:hover { color: var(--brand-strong); }
   line-height: 1.4;
 }
 
+/* ---------- PIN entry modal ---------- */
+
+.gx-pin-modal { max-width: 320px; }
+.gx-pin-subtitle { font-size: 13px; color: var(--ink-soft); margin: 0 0 16px; text-align: center; }
+.gx-pin-display {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: 26px;
+  letter-spacing: 10px;
+  text-align: center;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 10px;
+  margin-bottom: 18px;
+}
+.gx-pin-display:focus { outline: none; border-color: var(--brand); }
+.gx-pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.gx-pin-key {
+  padding: 14px 0;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.gx-pin-key:hover { background: var(--paper); }
+.gx-pin-key:active { background: var(--brand-tint); border-color: var(--brand); }
+.gx-pin-key-muted { color: var(--ink-soft); font-size: 13px; }
+
 /* ---------- print (receipt only) ---------- */
 
 @media print {

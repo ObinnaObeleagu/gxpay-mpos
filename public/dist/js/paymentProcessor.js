@@ -518,6 +518,78 @@
       });
   }
 
+  // ---- PIN entry modal ---------------------------------------------------
+  // Replaces the original stock demo's window.prompt()-based dialog()
+  // (public/dist/js/Script.js), which showed the PIN in plain, unmasked
+  // text and pre-filled a hardcoded "123456" default that could be
+  // submitted by accident. Fires from Script.js's onRequestSetPin()
+  // whenever the terminal needs the host app to collect a PIN.
+  let pendingPinCallback = null;
+
+  /**
+   * @param {(pin: string) => void} sendPinCallback - wraps
+   *   mService.sendPin(...) (see Script.js). Called with the entered PIN,
+   *   or an empty string if the operator cancels - sendPin("") is an
+   *   explicitly SDK-supported "no PIN provided" signal (confirmed in
+   *   main.js: it takes a distinct code path, not just an empty PIN sent
+   *   as-is), so cancelling doesn't leave the terminal with no response.
+   */
+  function onPinRequested(sendPinCallback) {
+    trace('Device requested PIN entry');
+    pendingPinCallback = sendPinCallback;
+    const input = $('pin-input');
+    if (input) {
+      input.value = '';
+      setTimeout(() => input.focus(), 50);
+    }
+    global.openModal('pinModal');
+  }
+
+  function submitPin() {
+    const input = $('pin-input');
+    const pin = input ? input.value.trim() : '';
+    if (!pin) {
+      if (input) input.focus();
+      return;
+    }
+    // Never trace the actual PIN digits - length/masked only.
+    trace('PIN entered', '*'.repeat(pin.length));
+    global.closeModal('pinModal');
+    const callback = pendingPinCallback;
+    pendingPinCallback = null;
+    if (callback) callback(pin);
+  }
+
+  function cancelPin() {
+    trace('PIN entry cancelled by operator');
+    global.closeModal('pinModal');
+    const callback = pendingPinCallback;
+    pendingPinCallback = null;
+    if (callback) callback('');
+  }
+
+  function pinKeyPress(digit) {
+    const input = $('pin-input');
+    if (!input) return;
+    if (input.value.length >= (input.getAttribute('maxlength') || 12)) return;
+    input.value += digit;
+    input.focus();
+  }
+
+  function pinKeyBackspace() {
+    const input = $('pin-input');
+    if (!input) return;
+    input.value = input.value.slice(0, -1);
+    input.focus();
+  }
+
+  function pinKeyClear() {
+    const input = $('pin-input');
+    if (!input) return;
+    input.value = '';
+    input.focus();
+  }
+
   // ---- public API ------------------------------------------------------------
   global.PaymentProcessor = {
     onWaitingForCard,
@@ -530,6 +602,12 @@
     confirmStatus,
     printReceipt,
     downloadReceiptPdf,
+    onPinRequested,
+    submitPin,
+    cancelPin,
+    pinKeyPress,
+    pinKeyBackspace,
+    pinKeyClear,
     trace, // exposed so Script.js can log raw device/protocol events too
   };
   global.checkout = checkout;

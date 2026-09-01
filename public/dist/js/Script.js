@@ -348,17 +348,19 @@ QPOSServiceListenerImpl.prototype.onRequestSetPin = function () {
     // Fires when the card/terminal config requires PIN entry AND the
     // device has no embedded PIN pad of its own - the host application is
     // expected to collect a PIN and send it back via mService.sendPin(pin).
-    // This currently does nothing, which means if a test card ever requires
-    // PIN entry, the terminal is left waiting indefinitely for a PIN that
-    // never comes - a very plausible cause of a session abort/timeout. If
-    // the trace log shows this firing before DEVICE_ERROR, that is very
-    // likely the actual root cause, and a real PIN-entry flow (or a test
-    // card that doesn't require PIN CVM) is needed, not a mock/hardcoded
-    // value - sending a fixed PIN would be both a security problem and
-    // likely to fail issuer PIN verification anyway.
-    if (window.PaymentProcessor) PaymentProcessor.trace('Device requested PIN entry', 'not currently handled - see comment in Script.js');
-    // mService.sendPin("1234");
-    dialog();
+    // Delegates to PaymentProcessor for a properly branded, masked PIN
+    // entry modal - replaces the original stock demo's dialog() function
+    // (removed below), which used the browser's native window.prompt(),
+    // showed the PIN in plain unmasked text, and pre-filled a hardcoded
+    // "123456" default that could be submitted by accident.
+    PaymentProcessor.onPinRequested(function (pin) {
+        // sendPin("") is an explicitly SDK-supported "no PIN provided"
+        // signal (confirmed in main.js - it takes a distinct code path,
+        // not just an empty PIN sent as-is), so a cancelled entry still
+        // gets a real response back to the terminal rather than leaving
+        // it waiting indefinitely.
+        mService.sendPin(pin || "");
+    });
 }
 
 QPOSServiceListenerImpl.prototype.onReturnUpdateIPEKResult = function (flag) {
@@ -448,14 +450,6 @@ contiUpdateEmvBtn.addEventListener('click',async()=>{
 
 });
 
-function dialog(){
-  var str = prompt("Please input your pin","123456");
-  if(str){
-    console.log("dialog = "+str);
-    mService.sendPin(str);
-  }
-}
-
 var mEMVConfigBuffer;
 function upload(input) {  //支持chrome IE10  
     console.log("upload");
@@ -511,14 +505,6 @@ function switchToSerial(){
     }
 }
 
-function dialog(){
-    var str = prompt("Please input your pin","123456");
-    if(str){
-      console.log("dialog = "+str);
-      mService.sendPin(str);
-    }
-  }
-  
   function upload2(input) {  //支持chrome IE10  
       console.log("upload2");
       if (window.FileReader) {  
