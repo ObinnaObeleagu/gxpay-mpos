@@ -14,8 +14,11 @@ const fs = require('fs');
 const REQUIRED_PATHS = [
   'config/env.js',
   'routes/payments.js',
+  'routes/catalog.js',
   'services/gxpayClient.js',
+  'services/supabaseClient.js',
   'store/transactionStore.js',
+  'store/catalogStore.js',
   'lib/cardPayload.js',
   'public/checkout.html',
 ];
@@ -60,6 +63,7 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const config = require('./config/env');
 const paymentsRouter = require('./routes/payments');
+const catalogRouter = require('./routes/catalog');
 
 const app = express();
 
@@ -88,8 +92,11 @@ const paymentsLimiter = rateLimit({
   legacyHeaders: false,
 });
 app.use('/api/payments', paymentsLimiter, paymentsRouter);
+// Catalog (items/services price list) - lower-risk than payments, no
+// dedicated rate limiter needed beyond whatever's added globally later.
+app.use('/api/catalog', catalogRouter);
 
-app.get('/healthz', (_req, res) => res.json({ status: 'ok', gxpayMode: config.gxpay.mode }));
+app.get('/healthz', (_req, res) => res.json({ status: 'ok', gxpayMode: config.gxpay.mode, storeBackend: config.supabase.isConfigured ? 'supabase' : 'memory' }));
 
 const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));

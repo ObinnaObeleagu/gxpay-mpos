@@ -260,6 +260,68 @@ no client-side PDF library needed. Only references with a stored receipt
 (i.e. the charge attempt got at least as far as a gateway response) can be
 downloaded; unknown/pending references return a 404.
 
+## Database (Supabase) - optional persistence
+
+By default this app uses a zero-setup in-memory store for both
+transactions and the item catalog (below) - gone on every restart/redeploy,
+fine for local dev/demos, not for production. To persist both in a real
+Postgres database via [Supabase](https://supabase.com):
+
+1. Create a project at supabase.com
+2. Run `db/schema.sql` in the project's SQL Editor (Dashboard -> SQL Editor
+   -> New query -> paste the file -> Run) - it creates both the
+   `transactions` and `catalog_items` tables in one migration
+3. Project Settings -> API -> copy the **Project URL** and the
+   **service_role** secret key (NOT the anon/public key)
+4. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (`.env` locally, or
+   Render's Environment tab in production)
+
+The backend auto-detects which store to use - both env vars set means
+Supabase, either blank means in-memory. Nothing else changes; `GET
+/healthz` reports which one is active (`storeBackend: "supabase"` or
+`"memory"`) so you can confirm at a glance.
+
+**Security note:** the service role key bypasses Row Level Security
+entirely and must only ever live server-side, exactly like the GxPay API
+credentials - never expose it to the browser. `db/schema.sql` also enables
+RLS with a default-deny policy as defense in depth, in case a different
+(non-service-role) key is ever used against these tables later.
+
+**What I could verify without your actual Supabase project:** the in-memory
+fallback's full behavior (complete smoke test suite passes), and the
+*failure* path - pointed the app at deliberately invalid Supabase
+credentials and confirmed a charge attempt fails cleanly (500, clear error
+message) without crashing the server. I could not do a live round-trip
+against a real Supabase project myself - that first real test is worth
+running yourself once you add real credentials (the smoke test script,
+`npm run smoke-test`, is a good way to do it).
+
+## Items (sale/service catalog) and receipt descriptions
+
+The **Items** tab is a price list: add sale items and services with a name,
+price, currency, and type. `db/schema.sql`'s `catalog_items` table backs
+it, via the same Supabase/in-memory dual-backend pattern as transactions
+(`store/catalogStore.js`, `routes/catalog.js` - full CRUD:
+`GET/POST /api/catalog`, `PATCH/DELETE /api/catalog/:id`).
+
+On the **Checkout** tab, an "Item" picker (populated from the same
+catalog) sits above Transaction Type. Selecting an item:
+- Fills the Amount field with the item's price x quantity (quantity
+  defaults to 1, editable next to the picker)
+- Matches the currency dropdown to the item's currency
+- Sets a receipt description - "Sale of <item name>" for sale items,
+  "Payment for <item name>" for services, or "<verb> <qty> x <item name>"
+  when quantity > 1
+
+That description flows through the whole system: `POST
+/api/payments/charge`'s optional `description` field ->
+`buildReceipt()` -> stored with the transaction -> shown as a headline
+(above the itemized rows) on the live checkout receipt, the Transactions
+tab's list and receipt modal, and the downloadable/printable PDF
+(`lib/receiptPdf.js`). A custom-amount charge (no item selected) simply has
+no description, exactly like before this feature existed - nothing about
+the existing flow changed for that case.
+
 ## Transactions tab
 
 The **Transactions** tab (next to Checkout) lists every transaction the

@@ -44,6 +44,9 @@
     <button type="button" class="gx-tab" id="tab-transactions" role="tab" aria-selected="false" onclick="Transactions.switchTab('transactions')">
       <i class="fas fa-receipt"></i> Transactions
     </button>
+    <button type="button" class="gx-tab" id="tab-items" role="tab" aria-selected="false" onclick="Transactions.switchTab('items')">
+      <i class="fas fa-tags"></i> Items
+    </button>
   </nav>
 
   <!-- Main checkout -->
@@ -58,6 +61,16 @@
         <div id="card-status" class="gx-status" role="status" aria-live="polite">
           <span class="dot" aria-hidden="true"></span>
           <span id="card-status-text">Not connected. Tap Connect above to pair your CR100-SCRP.</span>
+        </div>
+
+        <div class="gx-field">
+          <label for="catalog-item-select">Item <span class="gx-label-hint">(optional - fills amount &amp; description below)</span></label>
+          <div class="gx-amount-row">
+            <select id="catalog-item-select" class="gx-select" style="flex:1;" onchange="Transactions.onCatalogItemSelected()">
+              <option value="">Custom amount (no item)</option>
+            </select>
+            <input type="number" min="1" step="1" class="gx-select" id="catalog-item-qty" value="1" style="width:70px; text-align:center;" aria-label="Quantity" onchange="Transactions.onCatalogItemSelected()">
+          </div>
         </div>
 
         <div class="gx-field">
@@ -104,6 +117,7 @@
             <div class="gx-receipt">
               <img src="dist/img/gxpay-logo.png" alt="GXPAY" class="gx-receipt-logo" width="130" height="45">
               <span id="receipt-status-badge" class="gx-receipt-status">&nbsp;</span>
+              <p id="receipt-description" class="gx-receipt-description" style="display:none;"></p>
               <div id="receipt-body"></div>
             </div>
             <div class="gx-receipt-serrated" aria-hidden="true"></div>
@@ -162,6 +176,69 @@
             </thead>
             <tbody id="transactions-tbody">
               <tr><td colspan="6" class="gx-table-empty">Loading&hellip;</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Items: sale/service catalog with prices -->
+  <main class="gx-main" id="items-view" style="display:none;">
+    <div class="gx-terminal gx-terminal-wide">
+      <section class="gx-panel gx-panel-wide">
+        <h2 class="gx-panel-title"><i class="fas fa-tags"></i>Items</h2>
+        <p class="gx-panel-subtitle">Sale items and services with a price attached. Pick one at checkout to fill the amount and receipt description automatically.</p>
+
+        <form id="item-form" class="gx-item-form" onsubmit="return Transactions.submitItemForm(event)">
+          <div class="gx-field" style="flex:2; min-width:180px;">
+            <label for="item-name">Name</label>
+            <input type="text" class="gx-select" id="item-name" placeholder="e.g. Bottled water (case of 50)" required>
+          </div>
+          <div class="gx-field" style="min-width:120px;">
+            <label for="item-price">Price</label>
+            <input type="number" min="0" step="0.01" class="gx-select" id="item-price" placeholder="0.00" required>
+          </div>
+          <div class="gx-field" style="min-width:130px;">
+            <label for="item-type">Type</label>
+            <select class="gx-select" id="item-type">
+              <option value="sale" selected>Sale</option>
+              <option value="service">Service</option>
+            </select>
+          </div>
+          <div class="gx-field" style="min-width:100px;">
+            <label for="item-currency">Currency</label>
+            <select class="gx-select" id="item-currency">
+              <option value="NGN" selected>NGN</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="GBP">GBP</option>
+            </select>
+          </div>
+          <div class="gx-field" style="min-width:120px;">
+            <label>&nbsp;</label>
+            <button type="submit" class="gx-btn" id="item-form-submit" style="padding:10px 16px;">
+              <i class="fas fa-plus"></i> <span id="item-form-submit-label">Add item</span>
+            </button>
+          </div>
+          <div class="gx-field" style="min-width:90px;" id="item-form-cancel-wrap">
+            <label>&nbsp;</label>
+            <button type="button" class="gx-btn gx-btn-ghost" style="padding:10px 16px;" onclick="Transactions.cancelItemEdit()">Cancel</button>
+          </div>
+        </form>
+
+        <div class="gx-table-wrap">
+          <table class="gx-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Price</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="items-tbody">
+              <tr><td colspan="4" class="gx-table-empty">Loading&hellip;</td></tr>
             </tbody>
           </table>
         </div>
@@ -228,6 +305,7 @@
           <div class="gx-receipt">
             <img src="dist/img/gxpay-logo.png" alt="GXPAY" class="gx-receipt-logo" width="130" height="45">
             <span id="tx-receipt-status-badge" class="gx-receipt-status">&nbsp;</span>
+            <p id="tx-receipt-description" class="gx-receipt-description" style="display:none;"></p>
             <div id="tx-receipt-body"></div>
           </div>
           <div class="gx-receipt-serrated" aria-hidden="true"></div>

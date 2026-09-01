@@ -613,6 +613,34 @@ a:hover { color: var(--brand-strong); }
 .gx-btn-link:hover { color: var(--brand-strong); text-decoration: underline; }
 .gx-btn-link:disabled { color: var(--ink-soft); cursor: not-allowed; text-decoration: none; opacity: 0.6; }
 
+/* ---------- items (catalog) ---------- */
+
+.gx-item-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  padding-bottom: 20px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.gx-item-form .gx-field { margin-bottom: 0; }
+#item-form-cancel-wrap { display: none; }
+
+.gx-label-hint { text-transform: none; font-weight: 500; letter-spacing: normal; color: var(--ink-soft); font-size: 11px; }
+
+/* Prominent "what was sold" line on a receipt, e.g. "Sale of wine" -
+   sits between the status badge and the itemized rows, reading like a
+   headline rather than another label:value row. */
+.gx-receipt-description {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 14px;
+  line-height: 1.4;
+}
+
 /* ---------- print (receipt only) ---------- */
 
 @media print {

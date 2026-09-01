@@ -15,13 +15,18 @@ function toMinorUnits(amount) {
   return Math.round(n * 100);
 }
 
-function buildReceipt({ reference, amount, currency, result, device }) {
+function buildReceipt({ reference, amount, currency, result, device, description }) {
   return {
     reference,
     merchant: config.merchantName,
     terminalId: config.terminalId,
     amount: Number(amount).toFixed(2),
     currency,
+    // What was actually sold, e.g. "Sale of wine" / "Payment for swimming
+    // service" - set from a selected catalog item (see store/catalogStore.js)
+    // or typed manually at checkout. Optional - a bare custom-amount charge
+    // has no description, and older/existing transactions won't have one.
+    description: description || null,
     card: maskAmountReceiptCard(result.maskedPan || device.maskedPan),
     cardScheme: result.cardScheme || device.cardScheme || null,
     entryMode: device.entryMode,
@@ -42,35 +47,46 @@ function buildReceipt({ reference, amount, currency, result, device }) {
  * to keep the payload light - the UI fetches full receipt detail per
  * transaction via GET /:reference/status when the user views/reprints one.
  */
-router.get('/', (req, res) => {
-  const { status } = req.query;
-  const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
-  const records = store.list({ status }).slice(0, limit);
+router.get('/', async (req, res) => {
+  try {
+    const { status } = req.query;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+    const records = (await store.list({ status })).slice(0, limit);
 
-  const transactions = records.map((r) => ({
-    reference: r.reference,
-    status: r.status,
-    amount: r.amount,
-    currency: r.currency,
-    entryMode: (r.device && r.device.entryMode) || (r.receipt && r.receipt.entryMode) || null,
-    card: (r.receipt && r.receipt.card) || (r.device && r.device.maskedPan) || null,
-    cardScheme: (r.receipt && r.receipt.cardScheme) || null,
-    authCode: (r.receipt && r.receipt.authCode) || null,
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
-    hasReceipt: !!r.receipt,
-  }));
+    const transactions = records.map((r) => ({
+      reference: r.reference,
+      status: r.status,
+      amount: r.amount,
+      currency: r.currency,
+      description: r.description || (r.receipt && r.receipt.description) || null,
+      entryMode: (r.device && r.device.entryMode) || (r.receipt && r.receipt.entryMode) || null,
+      card: (r.receipt && r.receipt.card) || (r.device && r.device.maskedPan) || null,
+      cardScheme: (r.receipt && r.receipt.cardScheme) || null,
+      authCode: (r.receipt && r.receipt.authCode) || null,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      hasReceipt: !!r.receipt,
+    }));
 
-  return res.json({ status: 'ok', count: transactions.length, transactions });
+    return res.json({ status: 'ok', count: transactions.length, transactions });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[payments/list] failed:', err.message);
+    return res.status(500).json({ status: 'error', message: 'Failed to list transactions' });
+  }
 });
 
 /**
  * POST /api/payments/charge
- * Body: { amount, currency, reference?, device: { entryMode, maskedPan, ksn,
- *         encryptedTrack2?, encryptedPinBlock?, emvTags?, model, serial } }
+ * Body: { amount, currency, reference?, description?, device: { entryMode,
+ *         maskedPan, ksn, encryptedTrack2?, encryptedPinBlock?, emvTags?,
+ *         model, serial } }
+ * `description` is optional free text (e.g. "Sale of wine") - typically set
+ * from a selected catalog item, see store/catalogStore.js and
+ * routes/catalog.js.
  */
 router.post('/charge', async (req, res) => {
-  const { amount, currency, device } = req.body || {};
+  const { amount, currency, device, description } = req.body || {};
   const reference = req.body?.reference || `TXN-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
 
   // --- validation ---
@@ -81,20 +97,30 @@ router.post('/charge', async (req, res) => {
   if (!currency || typeof currency !== 'string') {
     errors.push('currency is required (e.g. "NGN", "USD")');
   }
+  if (description !== undefined && typeof description !== 'string') {
+    errors.push('description must be a string if provided');
+  }
   errors.push(...validateDevicePayload(device));
 
   if (errors.length) {
     return res.status(400).json({ status: 'error', errors });
   }
 
-  store.save({
-    reference,
-    amount: Number(amount).toFixed(2),
-    currency,
-    status: 'pending',
-    device: { entryMode: device.entryMode, model: device.model, maskedPan: device.maskedPan },
-    createdAt: new Date().toISOString(),
-  });
+  try {
+    await store.save({
+      reference,
+      amount: Number(amount).toFixed(2),
+      currency,
+      description: description || null,
+      status: 'pending',
+      device: { entryMode: device.entryMode, model: device.model, maskedPan: device.maskedPan },
+      createdAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[payments/charge] failed to record pending transaction:', err.message);
+    return res.status(500).json({ status: 'error', message: 'Failed to start transaction' });
+  }
 
   try {
     const result = await gxpay.chargeCard({
@@ -105,11 +131,12 @@ router.post('/charge', async (req, res) => {
       merchant: { merchantId: config.gxpay.merchantId, terminalId: config.gxpay.terminalId || config.terminalId },
     });
 
-    const receipt = buildReceipt({ reference, amount, currency, result, device });
+    const receipt = buildReceipt({ reference, amount, currency, result, device, description });
 
-    store.update(reference, {
+    await store.update(reference, {
       status: result.status,
       gatewayReference: result.gatewayReference,
+      description: description || null,
       receipt,
     });
 
@@ -120,7 +147,12 @@ router.post('/charge', async (req, res) => {
     // eslint-disable-next-line no-console
     console.error('[payments/charge] gateway error:', err.message);
 
-    store.update(reference, { status: 'error', error: err.message });
+    try {
+      await store.update(reference, { status: 'error', error: err.message });
+    } catch (storeErr) {
+      // eslint-disable-next-line no-console
+      console.error('[payments/charge] additionally failed to record the error:', storeErr.message);
+    }
 
     return res.status(isGxPayError && err.statusCode ? 502 : 500).json({
       status: 'error',
@@ -138,7 +170,14 @@ router.post('/charge', async (req, res) => {
  */
 router.get('/:reference/status', async (req, res) => {
   const { reference } = req.params;
-  const local = store.get(reference);
+  let local;
+  try {
+    local = await store.get(reference);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[payments/status] store lookup failed:', err.message);
+    return res.status(500).json({ status: 'error', message: 'Failed to look up transaction' });
+  }
 
   if (local && local.status !== 'pending') {
     return res.json({ status: local.status, reference, receipt: local.receipt || null, source: 'local' });
@@ -147,7 +186,7 @@ router.get('/:reference/status', async (req, res) => {
   try {
     const remote = await gxpay.queryStatus(reference);
     if (remote) {
-      store.update(reference, { status: remote.status });
+      await store.update(reference, { status: remote.status });
       return res.json({ status: remote.status, reference, source: 'gxpay' });
     }
   } catch (err) {
@@ -170,7 +209,14 @@ router.get('/:reference/status', async (req, res) => {
  */
 router.get('/:reference/receipt.pdf', async (req, res) => {
   const { reference } = req.params;
-  const record = store.get(reference);
+  let record;
+  try {
+    record = await store.get(reference);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[payments/receipt.pdf] store lookup failed:', err.message);
+    return res.status(500).json({ status: 'error', message: 'Failed to look up transaction' });
+  }
 
   if (!record || !record.receipt) {
     return res.status(404).json({ status: 'error', message: 'No receipt available for this reference' });
@@ -197,7 +243,7 @@ router.get('/:reference/receipt.pdf', async (req, res) => {
  * signature header name against GxPay's webhook docs before relying on this
  * in production - verifyWebhookSignature() is a placeholder HMAC check.
  */
-router.post('/webhook/gxpay', express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }), (req, res) => {
+router.post('/webhook/gxpay', express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }), async (req, res) => {
   if (config.gxpay.webhookSecret) {
     const signature = req.header('X-GxPay-Signature');
     const expected = crypto
@@ -214,11 +260,17 @@ router.post('/webhook/gxpay', express.json({ verify: (req, _res, buf) => { req.r
     return res.status(400).json({ status: 'error', message: 'reference and status are required' });
   }
 
-  const updated = store.update(reference, { status });
-  if (!updated) {
-    return res.status(404).json({ status: 'error', message: 'Unknown reference' });
+  try {
+    const updated = await store.update(reference, { status });
+    if (!updated) {
+      return res.status(404).json({ status: 'error', message: 'Unknown reference' });
+    }
+    return res.json({ status: 'ok' });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[payments/webhook] store update failed:', err.message);
+    return res.status(500).json({ status: 'error', message: 'Failed to record webhook update' });
   }
-  return res.json({ status: 'ok' });
 });
 
 module.exports = router;

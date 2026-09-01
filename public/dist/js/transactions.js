@@ -1,17 +1,20 @@
 /**
  * transactions.js
  * ---------------------------------------------------------------------------
- * The "Transactions" tab: lists every transaction the backend has recorded
- * (GET /api/payments - store/transactionStore.js on the Node backend),
- * lets the operator filter by status, and view/reprint/re-download the
- * receipt for any past transaction (GET /api/payments/:reference/status
- * for the full receipt, GET /api/payments/:reference/receipt.pdf for the
- * PDF - both already existed for the live checkout flow; this reuses them
- * rather than adding new endpoints).
+ * Powers two tabs plus the checkout screen's item picker:
+ *   - "Transactions": lists everything recorded (GET /api/payments), with
+ *     view/reprint/re-download for any past receipt
+ *   - "Items": the sale/service catalog (GET/POST/PATCH/DELETE
+ *     /api/catalog) - add, edit, delete items and their prices
+ *   - The Checkout tab's "Item" picker reads from the same catalog so
+ *     selecting an item fills in the amount and a receipt description
+ *     ("Sale of wine") instead of a bare amount - see
+ *     onCatalogItemSelected()/getSelectedDescription(), called from
+ *     paymentProcessor.js's checkout().
  *
  * Kept as its own module, separate from paymentProcessor.js, since it's a
- * distinct concern (browsing history vs. running a live transaction) and
- * intentionally doesn't touch any in-progress checkout state.
+ * distinct concern (browsing history / catalog management vs. running a
+ * live transaction).
  * ---------------------------------------------------------------------------
  */
 (function (global) {
@@ -21,6 +24,9 @@
     filter: '',
     transactions: [],
     currentReceipt: null,
+    catalogItems: [],
+    editingItemId: null,
+    selectedCatalogItem: null,
   };
 
   function $(id) {
@@ -39,21 +45,29 @@
     return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
   }
 
-  // ---- tab switching --------------------------------------------------
-  function switchTab(tab) {
-    const isCheckout = tab === 'checkout';
-    $('checkout-view').style.display = isCheckout ? 'flex' : 'none';
-    $('transactions-view').style.display = isCheckout ? 'none' : 'flex';
-
-    $('tab-checkout').classList.toggle('active', isCheckout);
-    $('tab-checkout').setAttribute('aria-selected', String(isCheckout));
-    $('tab-transactions').classList.toggle('active', !isCheckout);
-    $('tab-transactions').setAttribute('aria-selected', String(!isCheckout));
-
-    if (!isCheckout) load();
+  function formatMoney(currency, amount) {
+    const n = Number(amount);
+    return `${currency} ${Number.isNaN(n) ? amount : n.toFixed(2)}`;
   }
 
-  // ---- list -------------------------------------------------------------
+  // ---- tab switching ------------------------------------------------------
+  function switchTab(tab) {
+    $('checkout-view').style.display = tab === 'checkout' ? 'flex' : 'none';
+    $('transactions-view').style.display = tab === 'transactions' ? 'flex' : 'none';
+    $('items-view').style.display = tab === 'items' ? 'flex' : 'none';
+
+    ['checkout', 'transactions', 'items'].forEach((t) => {
+      const btn = $(`tab-${t}`);
+      const active = t === tab;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', String(active));
+    });
+
+    if (tab === 'transactions') load();
+    if (tab === 'items') loadCatalog();
+  }
+
+  // ---- transactions list --------------------------------------------------
   function setFilter(status) {
     state.filter = status;
     load();
@@ -83,10 +97,11 @@
     tbody.innerHTML = state.transactions
       .map((t) => {
         const statusClass = t.status === 'approved' ? 'approved' : t.status === 'declined' ? 'declined' : t.status === 'error' ? 'error' : 'pending';
+        const descriptor = t.description ? `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">${escapeHtml(t.description)}</div>` : '';
         return `<tr>
           <td>${escapeHtml(formatDateTime(t.createdAt))}</td>
-          <td class="gx-table-mono">${escapeHtml(t.reference)}</td>
-          <td>${escapeHtml(t.currency)} ${escapeHtml(t.amount)}</td>
+          <td class="gx-table-mono">${escapeHtml(t.reference)}${descriptor}</td>
+          <td>${escapeHtml(formatMoney(t.currency, t.amount))}</td>
           <td>${escapeHtml(t.card || '-')}</td>
           <td><span class="gx-table-badge ${statusClass}">${escapeHtml((t.status || '').toUpperCase())}</span></td>
           <td class="gx-table-actions">
@@ -99,7 +114,7 @@
       .join('');
   }
 
-  // ---- receipt view / reprint / re-download ------------------------------
+  // ---- receipt view / reprint / re-download --------------------------------
   async function viewReceipt(reference) {
     try {
       const res = await fetch(`/api/payments/${encodeURIComponent(reference)}/status`);
@@ -122,11 +137,21 @@
     badge.textContent = approved ? 'Approved' : (receipt.status || '').charAt(0).toUpperCase() + (receipt.status || '').slice(1);
     badge.className = `gx-receipt-status ${approved ? 'approved' : receipt.status}`;
 
+    const descriptionEl = $('tx-receipt-description');
+    if (descriptionEl) {
+      if (receipt.description) {
+        descriptionEl.textContent = receipt.description;
+        descriptionEl.style.display = '';
+      } else {
+        descriptionEl.style.display = 'none';
+      }
+    }
+
     const rows = [
       ['Merchant', receipt.merchant],
       ['Terminal', receipt.terminalId],
       ['Reference', receipt.reference],
-      ['Amount', `${receipt.currency} ${receipt.amount}`],
+      ['Amount', formatMoney(receipt.currency, receipt.amount)],
       ['Card', `${receipt.cardScheme || ''} ${receipt.card}`.trim()],
       ['Entry Mode', receipt.entryMode],
       ['Auth Code', receipt.authCode || '-'],
@@ -157,6 +182,185 @@
     a.remove();
   }
 
+  // ---- catalog: shared load (powers both the checkout picker and the
+  // Items tab's table) ------------------------------------------------------
+  async function loadCatalog() {
+    try {
+      const res = await fetch('/api/catalog');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+      state.catalogItems = data.items || [];
+      populateCatalogPicker();
+      renderItemsTable();
+    } catch (err) {
+      const tbody = $('items-tbody');
+      if (tbody) tbody.innerHTML = `<tr><td colspan="4" class="gx-table-empty">Could not load items: ${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  function populateCatalogPicker() {
+    const select = $('catalog-item-select');
+    if (!select) return;
+    const previousValue = select.value;
+    const sale = state.catalogItems.filter((i) => i.type === 'sale');
+    const service = state.catalogItems.filter((i) => i.type === 'service');
+
+    function optionsFor(items) {
+      return items
+        .map((i) => `<option value="${escapeHtml(i.id)}">${escapeHtml(i.name)} &mdash; ${escapeHtml(formatMoney(i.currency, i.price))}</option>`)
+        .join('');
+    }
+
+    select.innerHTML =
+      '<option value="">Custom amount (no item)</option>' +
+      (sale.length ? `<optgroup label="Sale items">${optionsFor(sale)}</optgroup>` : '') +
+      (service.length ? `<optgroup label="Services">${optionsFor(service)}</optgroup>` : '');
+
+    // Preserve selection across a reload (e.g. after adding a new item)
+    // where possible.
+    if (previousValue && state.catalogItems.some((i) => i.id === previousValue)) {
+      select.value = previousValue;
+    }
+  }
+
+  // ---- checkout integration: item picker -----------------------------------
+  function onCatalogItemSelected() {
+    const select = $('catalog-item-select');
+    const qtyInput = $('catalog-item-qty');
+    const amountInput = $('Amount');
+    const currencySelect = $('currency_code');
+    if (!select) return;
+
+    const id = select.value;
+    const qty = Math.max(1, parseInt((qtyInput && qtyInput.value) || '1', 10) || 1);
+
+    if (!id) {
+      state.selectedCatalogItem = null;
+      return;
+    }
+
+    const item = state.catalogItems.find((i) => i.id === id);
+    if (!item) return;
+
+    state.selectedCatalogItem = { item, qty };
+
+    const total = Number(item.price) * qty;
+    if (amountInput) amountInput.value = total.toFixed(2);
+
+    // Match the currency dropdown to the item's currency where possible,
+    // so the charge and the description agree with each other.
+    if (currencySelect) {
+      const match = Array.from(currencySelect.options).find((o) => o.getAttribute('data-alpha') === item.currency);
+      if (match) currencySelect.value = match.value;
+    }
+  }
+
+  /**
+   * Called from paymentProcessor.js's checkout() to build the receipt
+   * description, e.g. "Sale of Bottled water (case of 50)" or
+   * "3 x Spa and massage service" when a quantity > 1 was set. Returns
+   * undefined for a plain custom-amount charge (no item selected).
+   */
+  function getSelectedDescription() {
+    const sel = state.selectedCatalogItem;
+    if (!sel) return undefined;
+    const verb = sel.item.type === 'service' ? 'Payment for' : 'Sale of';
+    return sel.qty > 1 ? `${verb} ${sel.qty} x ${sel.item.name}` : `${verb} ${sel.item.name}`;
+  }
+
+  // ---- items tab: table + add/edit/delete ----------------------------------
+  function renderItemsTable() {
+    const tbody = $('items-tbody');
+    if (!tbody) return;
+    if (!state.catalogItems.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="gx-table-empty">No items yet - add one above.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = state.catalogItems
+      .map(
+        (i) => `<tr>
+          <td>${escapeHtml(i.name)}</td>
+          <td><span class="gx-table-badge ${i.type === 'service' ? 'pending' : 'approved'}">${escapeHtml(i.type.toUpperCase())}</span></td>
+          <td>${escapeHtml(formatMoney(i.currency, i.price))}</td>
+          <td class="gx-table-actions">
+            <button type="button" class="gx-btn-link" onclick="Transactions.editItem('${escapeHtml(i.id)}')">Edit</button>
+            <button type="button" class="gx-btn-link" style="color:var(--danger); margin-left:10px;" onclick="Transactions.deleteItem('${escapeHtml(i.id)}')">Delete</button>
+          </td>
+        </tr>`
+      )
+      .join('');
+  }
+
+  function editItem(id) {
+    const item = state.catalogItems.find((i) => i.id === id);
+    if (!item) return;
+    state.editingItemId = id;
+    $('item-name').value = item.name;
+    $('item-price').value = item.price;
+    $('item-type').value = item.type;
+    $('item-currency').value = item.currency;
+    $('item-form-submit-label').textContent = 'Save changes';
+    $('item-form-cancel-wrap').style.display = '';
+    $('item-name').focus();
+  }
+
+  function cancelItemEdit() {
+    state.editingItemId = null;
+    $('item-form').reset();
+    $('item-form-submit-label').textContent = 'Add item';
+    $('item-form-cancel-wrap').style.display = 'none';
+  }
+
+  async function submitItemForm(event) {
+    event.preventDefault();
+    const name = $('item-name').value.trim();
+    const price = $('item-price').value;
+    const type = $('item-type').value;
+    const currency = $('item-currency').value;
+
+    if (!name || price === '' || Number(price) < 0) {
+      // eslint-disable-next-line no-alert
+      alert('Enter a name and a valid (non-negative) price.');
+      return false;
+    }
+
+    const editingId = state.editingItemId;
+    const url = editingId ? `/api/catalog/${encodeURIComponent(editingId)}` : '/api/catalog';
+    const method = editingId ? 'PATCH' : 'POST';
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, price: Number(price), type, currency }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error((data.errors && data.errors.join(', ')) || data.message || `HTTP ${res.status}`);
+      cancelItemEdit();
+      await loadCatalog();
+    } catch (err) {
+      // eslint-disable-next-line no-alert
+      alert(`Could not save item: ${err.message}`);
+    }
+    return false;
+  }
+
+  async function deleteItem(id) {
+    const item = state.catalogItems.find((i) => i.id === id);
+    // eslint-disable-next-line no-alert
+    if (!confirm(`Delete "${item ? item.name : 'this item'}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/catalog/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+      if (state.editingItemId === id) cancelItemEdit();
+      await loadCatalog();
+    } catch (err) {
+      // eslint-disable-next-line no-alert
+      alert(`Could not delete item: ${err.message}`);
+    }
+  }
+
   global.Transactions = {
     switchTab,
     setFilter,
@@ -164,5 +368,17 @@
     viewReceipt,
     printCurrentReceipt,
     downloadCurrentReceiptPdf,
+    loadCatalog,
+    onCatalogItemSelected,
+    getSelectedDescription,
+    editItem,
+    cancelItemEdit,
+    submitItemForm,
+    deleteItem,
   };
+
+  // Populate the checkout item picker as soon as the page loads (not just
+  // when the Items tab is opened), since the Checkout tab is the default
+  // view and its picker needs the same data immediately.
+  document.addEventListener('DOMContentLoaded', loadCatalog);
 })(window);

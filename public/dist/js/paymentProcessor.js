@@ -139,6 +139,12 @@
       amount: amount.toFixed(2),
       currencyAlpha: currency.alpha,
       currencyNumeric: currency.numeric,
+      // Set by the Items tab's picker (Transactions.onCatalogItemSelected())
+      // when the operator selected a catalog item rather than typing a
+      // custom amount - see public/dist/js/transactions.js. Undefined for
+      // a plain custom-amount charge, which is fine - the backend treats a
+      // missing/empty description as optional.
+      description: (global.Transactions && global.Transactions.getSelectedDescription) ? global.Transactions.getSelectedDescription() : undefined,
     };
 
     resetTrace();
@@ -356,6 +362,7 @@
       reference: p.reference,
       device: Object.assign({ model: 'CR100-SCRP' }, device),
     };
+    if (p.description) payload.description = p.description;
 
     return fetch('/api/payments/charge', {
       method: 'POST',
@@ -394,12 +401,22 @@
     const wrap = $('receipt-panel');
     const body = $('receipt-body');
     const badge = $('receipt-status-badge');
+    const descriptionEl = $('receipt-description');
     if (!wrap || !body) return;
 
     const approved = receipt.status === 'approved';
     if (badge) {
       badge.textContent = approved ? 'Approved' : receipt.status.charAt(0).toUpperCase() + receipt.status.slice(1);
       badge.className = `gx-receipt-status ${approved ? 'approved' : receipt.status}`;
+    }
+
+    if (descriptionEl) {
+      if (receipt.description) {
+        descriptionEl.textContent = receipt.description;
+        descriptionEl.style.display = '';
+      } else {
+        descriptionEl.style.display = 'none';
+      }
     }
 
     const rows = [

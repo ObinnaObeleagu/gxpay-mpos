@@ -46,6 +46,26 @@ const config = {
     // never do this against a live gateway with real cardholder data.
     verboseCardLogging: toBool(process.env.VERBOSE_CARD_LOGGING, false),
   },
+
+  // --- Database (Supabase) ---
+  // Both the transaction store and the catalog (items/services price list)
+  // use this - see store/transactionStore.js, store/catalogStore.js. The
+  // backend is auto-detected: if both SUPABASE_URL and
+  // SUPABASE_SERVICE_ROLE_KEY are set, Supabase is used; otherwise the app
+  // falls back to a zero-setup in-memory store (gone on restart - fine for
+  // local dev/testing, not for production). There is no separate on/off
+  // flag to keep out of sync with the credentials themselves.
+  //
+  // IMPORTANT: this must be the SERVICE ROLE key, not the anon/public key -
+  // it grants full table access bypassing Row Level Security, so it must
+  // only ever live server-side (here), exactly like the GxPay API
+  // credentials above. Never expose it to the browser.
+  supabase: {
+    url: process.env.SUPABASE_URL || '',
+    serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  },
 };
+
+config.supabase.isConfigured = Boolean(config.supabase.url && config.supabase.serviceKey);
 
 module.exports = config;
