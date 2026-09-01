@@ -155,13 +155,73 @@ QPOSServiceListenerImpl.prototype.onRequestTransactionResult = function (msg) {
         msg === "DECLINED" ? 'Card declined (offline - not sent to GxPay).' : `Transaction ended: ${msg}`
     );
 }
+// Set while a deliberate resetDevice() reset is in flight, so onError()
+// below can tell the device's own acknowledgment of that reset apart from
+// a genuine error - see resetDevice() and onError().
+var isResetInProgress = false;
+
 QPOSServiceListenerImpl.prototype.onError = function (msg) {
     console.log("onError: " + msg);
+    if (msg === "DEVICE_RESET" && isResetInProgress) {
+        // Expected acknowledgment of our own resetDevice() call, not a
+        // real error - the device's response to CMDID_RESET comes back
+        // through this same generic onError() dispatcher (see main.js's
+        // checkCmdId()). Trace it as a neutral/positive confirmation
+        // instead of showing a misleading red "Device error" banner for
+        // something that actually just worked.
+        isResetInProgress = false;
+        if (window.PaymentProcessor) {
+            PaymentProcessor.onResetComplete();
+        }
+        return;
+    }
     if (window.PaymentProcessor) {
         PaymentProcessor.onDeviceError('error', "Device error: " + msg);
     } else {
         trasactionData.innerText = "onError:" + msg;
     }
+}
+
+/**
+ * Sends the terminal an explicit reset (CMDID_RESET) to clear stale
+ * internal session state - wired to the "Reset device" button in Device
+ * settings. Kept as a deliberate, standalone, operator-triggered action
+ * rather than something run automatically before every checkout: an
+ * earlier version of checkout() called this immediately before doTrade(),
+ * and real-device trace evidence showed the very next command landing
+ * before the device had actually finished settling from the reset,
+ * triggering a DEVICE_ERROR abort almost immediately (see the note in
+ * paymentProcessor.js's checkout()). Firing it here on its own, with real
+ * time to complete before the operator starts a new transaction, avoids
+ * that same race condition.
+ *
+ * This is also the closest thing this SDK exposes to "reset the NFC
+ * session" - there's no NFC-specific reset command surfaced anywhere in
+ * main.js, only this general device-level one, which is why it's worth
+ * trying if contactless transactions are failing at every amount
+ * (including a trivial one) while chip transactions still work: that
+ * pattern points at stuck terminal-side session state rather than a card
+ * or amount issue. If a reset doesn't clear it, that's evidence the issue
+ * is at the firmware/hardware level, not something fixable from the host
+ * app - see README-PAYMENT-INTEGRATION.md, "Debugging DEVICE_ERROR".
+ */
+function resetDevice() {
+    if (!Connected) {
+        if (window.PaymentProcessor) PaymentProcessor.trace('Reset device requested', 'not connected - connect first');
+        return;
+    }
+    isResetInProgress = true;
+    if (window.PaymentProcessor) {
+        PaymentProcessor.onResetStarted();
+    }
+    mService.resetPosStatus();
+    // Safety net: if the device's acknowledgment never arrives (e.g. the
+    // connection dropped), don't leave isResetInProgress stuck true
+    // forever - that would misclassify a later, genuine DEVICE_RESET
+    // error as an expected one.
+    setTimeout(function () {
+        isResetInProgress = false;
+    }, 4000);
 }
 QPOSServiceListenerImpl.prototype.onEmvICCExceptionData = function (msg) {
     console.log("onEmvICCExceptionData" + msg);

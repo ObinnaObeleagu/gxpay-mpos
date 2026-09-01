@@ -322,6 +322,42 @@ tab's list and receipt modal, and the downloadable/printable PDF
 no description, exactly like before this feature existed - nothing about
 the existing flow changed for that case.
 
+## Reset device (Device settings)
+
+**Use this if contactless (tap) transactions are failing at every amount,
+including a trivial one (e.g. NGN 1), while chip/insert transactions still
+work fine.** That specific pattern - not "too high an amount" (already
+ruled out if a small amount also fails), not a card issue (still fails
+right after a successful chip transaction with the same card) - points at
+stuck terminal-side session state rather than anything about the card or
+transaction.
+
+The "Reset device" button (Device settings -> Terminal Management) existed
+in the UI already but was wired to a function, `resetDevice()`, that was
+never actually implemented - clicking it silently did nothing. It now sends
+the terminal an explicit reset (`mService.resetPosStatus()` / `CMDID_RESET`)
+and waits for the device's own acknowledgment before telling you it's safe
+to try again - confirmed in a real browser test, including the transient
+"Resetting device..." (blue) -> "Device reset complete" (green) status
+sequence.
+
+This is a **deliberate, standalone, operator-triggered action** - it is
+never run automatically before checkout. An earlier version of `checkout()`
+did call this immediately before every trade attempt, and real-device trace
+evidence showed the very next command landing before the device had
+actually finished settling from the reset, itself triggering a
+`DEVICE_ERROR` abort (see "Debugging DEVICE_ERROR" below). Firing it here on
+its own, with real time to complete before you start a new transaction,
+avoids that same race condition.
+
+**If a reset doesn't clear a stuck contactless session**, that's real
+evidence the issue has moved from "something fixable in software" to a
+genuine firmware/hardware question - a full power cycle of the terminal is
+the next thing to try, and if that doesn't help either, it's worth raising
+with Dspread directly with the device's serial/firmware version. There's no
+NFC-specific reset command exposed anywhere in `main.js` - this general
+device-level reset is the closest thing the SDK provides.
+
 ## PIN entry modal
 
 `onRequestSetPin()` fires when a chip transaction needs a PIN and the

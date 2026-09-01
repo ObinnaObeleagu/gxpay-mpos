@@ -346,6 +346,21 @@
     trace('Device', text);
   }
 
+  // ---- device reset (Device settings -> Reset device) --------------------
+  // A deliberate, operator-triggered action - see the note in Script.js's
+  // resetDevice() on why this is never run automatically before checkout.
+  // Uses the status pill (not just the trace log) so the operator sees
+  // this happened without needing to read the diagnostic feed.
+  function onResetStarted() {
+    trace('Resetting device', 'sending CMDID_RESET to clear stale session state');
+    setCardStatus('processing', 'Resetting device...');
+  }
+
+  function onResetComplete() {
+    trace('Device acknowledged reset');
+    setCardStatus('approved', 'Device reset complete. You can try a new transaction now.');
+  }
+
   // ---- networking to our own backend (never directly to GxPay) ------------
   function maskPan(cardNum) {
     if (!cardNum) return null;
@@ -608,6 +623,8 @@
     pinKeyPress,
     pinKeyBackspace,
     pinKeyClear,
+    onResetStarted,
+    onResetComplete,
     trace, // exposed so Script.js can log raw device/protocol events too
   };
   global.checkout = checkout;
