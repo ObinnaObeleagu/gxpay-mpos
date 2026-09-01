@@ -36,3 +36,20 @@ services:
         sync: false
       - key: GXPAY_WEBHOOK_SECRET
         sync: false
+      # Database (Supabase) - optional. Leave both unset in the Render
+      # dashboard to keep using the zero-setup in-memory store (fine for a
+      # demo, gone on every redeploy). Set both to persist transactions and
+      # the item catalog in a real Postgres database instead:
+      #   1. Create a project at https://supabase.com
+      #   2. Run db/schema.sql in that project's SQL Editor (creates the
+      #      transactions and catalog_items tables in one migration)
+      #   3. Project Settings -> API -> copy the Project URL and the
+      #      service_role secret key (NOT the anon/public key)
+      #   4. Paste them into the two fields Render prompts for below
+      # See README-PAYMENT-INTEGRATION.md, "Database (Supabase)" for the
+      # full walkthrough and the security note on why this must be the
+      # service_role key.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

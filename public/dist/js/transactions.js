@@ -245,7 +245,19 @@
     state.selectedCatalogItem = { item, qty };
 
     const total = Number(item.price) * qty;
-    if (amountInput) amountInput.value = total.toFixed(2);
+    // The Dspread SDK's own checkAmount() (main.js) hard-rejects any
+    // amount string containing a "." with INPUT_INVALID_FORMAT - confirmed
+    // via real-device testing. A human typing into <input type="number">
+    // naturally never includes a decimal point unless they type one
+    // (typing "1000" gives value="1000"), which is why this only surfaced
+    // once this picker started setting the field programmatically.
+    // String(total) matches that same decimal-free format for whole-number
+    // prices (the common case - item prices here are typically whole Naira
+    // amounts). Fractional totals (e.g. a unit price with kobo) would still
+    // hit the device's own restriction - that's a genuine hardware/SDK
+    // limit, not something fixable from this side; keeping it as a known
+    // limitation rather than inventing unverified minor-unit handling.
+    if (amountInput) amountInput.value = String(total);
 
     // Match the currency dropdown to the item's currency where possible,
     // so the charge and the description agree with each other.
