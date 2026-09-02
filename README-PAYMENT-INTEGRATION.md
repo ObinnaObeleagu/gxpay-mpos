@@ -271,21 +271,29 @@ Postgres database via [Supabase](https://supabase.com):
 2. Run `db/schema.sql` in the project's SQL Editor (Dashboard -> SQL Editor
    -> New query -> paste the file -> Run) - it creates both the
    `transactions` and `catalog_items` tables in one migration
-3. Project Settings -> API -> copy the **Project URL** and the
-   **service_role** secret key (NOT the anon/public key)
+3. Project Settings -> API Keys -> copy the **Project URL** and the
+   **Secret key** (`sb_secret_...`) - **not** the "Publishable key"
+   (`sb_publishable_...`). Supabase renamed things in 2025: Publishable
+   replaced the old `anon` key, Secret replaced the old `service_role` key -
+   same distinction, new names, easy to grab the wrong one since they now
+   sit right next to each other in the dashboard. (If your project still
+   shows the older "Legacy API Keys" tab, use `service_role` there instead -
+   same key, old naming.)
 4. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (`.env` locally, or
-   Render's Environment tab in production)
+   Render's Environment tab in production) - the variable name still says
+   "SERVICE_ROLE" even though the actual value may be the newer
+   `sb_secret_...` format; the Supabase client library accepts either.
 
 The backend auto-detects which store to use - both env vars set means
 Supabase, either blank means in-memory. Nothing else changes; `GET
 /healthz` reports which one is active (`storeBackend: "supabase"` or
 `"memory"`) so you can confirm at a glance.
 
-**Security note:** the service role key bypasses Row Level Security
+**Security note:** the secret/service-role key bypasses Row Level Security
 entirely and must only ever live server-side, exactly like the GxPay API
 credentials - never expose it to the browser. `db/schema.sql` also enables
 RLS with a default-deny policy as defense in depth, in case a different
-(non-service-role) key is ever used against these tables later.
+(non-privileged) key is ever used against these tables later.
 
 **What I could verify without your actual Supabase project:** the in-memory
 fallback's full behavior (complete smoke test suite passes), and the
@@ -295,6 +303,32 @@ message) without crashing the server. I could not do a live round-trip
 against a real Supabase project myself - that first real test is worth
 running yourself once you add real credentials (the smoke test script,
 `npm run smoke-test`, is a good way to do it).
+
+### Debugging Supabase connection issues
+
+Two real problems came up setting this up against a live project - both
+worth checking first if the Items/Transactions tabs aren't showing your
+data:
+
+1. **Tabs load successfully but show "No items yet" / "No transactions
+   yet." even though Supabase has real rows.** This is the Publishable-key
+   mistake above - the query genuinely succeeds (HTTP 200), but RLS
+   silently filters every row out for a low-privileged key, which looks
+   identical to "the table is actually empty." No error is thrown, which
+   is what makes this one easy to miss. Fix: use the Secret key, not the
+   Publishable key (see step 3 above).
+2. **Tabs show a hard error - "Could not load items: Failed to list catalog
+   items" / "Failed to list transactions."** Check Render's Logs tab for
+   the real error (deliberately hidden from the browser response - see
+   `routes/catalog.js`/`routes/payments.js`). If it says `Node.js detected
+   but native WebSocket not found`, that's a known, current
+   `@supabase/supabase-js` requirement - their `realtime-js` dependency
+   needs native `WebSocket` support, which Node.js only ships by default
+   starting at **version 22**. `package.json`'s `engines.node` is already
+   set to `"22.x"` to make Render provision a compatible runtime - if
+   you're still hitting this, confirm Render's Logs show it actually built
+   with Node 22 (the deploy log prints the resolved Node version near the
+   top), and that the deploy is recent enough to include this fix.
 
 ## Items (sale/service catalog) and receipt descriptions
 
