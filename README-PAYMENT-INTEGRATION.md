@@ -322,6 +322,39 @@ tab's list and receipt modal, and the downloadable/printable PDF
 no description, exactly like before this feature existed - nothing about
 the existing flow changed for that case.
 
+### Seeding 100 sample items
+
+Two ways to populate the catalog with a ready-made, varied set of 100 sale
+items and services (groceries, electronics, clothing, haircuts, repairs,
+event services, consulting, etc. - NGN 350 to NGN 350,000) for
+testing/demos. Both are generated from the same underlying data, so they
+produce identical results - pick whichever fits your setup:
+
+- **`db/seed-catalog.sql`** - a plain SQL `INSERT`, for Supabase. Run it in
+  the SQL Editor *after* `db/schema.sql`. This is the one to use if you've
+  already set up Supabase per the "Database (Supabase)" section above.
+- **`scripts/seed-catalog.js`** - a Node script that calls `POST
+  /api/catalog` 100 times against a *running* server, so it works
+  identically regardless of which backend is active (in-memory or
+  Supabase) - useful for local testing without touching Supabase's SQL
+  Editor at all:
+  ```bash
+  npm start                        # in one terminal
+  node scripts/seed-catalog.js     # in another - defaults to http://localhost:3000
+  # or against a deployed instance:
+  BASE_URL=https://your-app.onrender.com node scripts/seed-catalog.js
+  ```
+  Safe to re-run - there's no duplicate-name check, so running it twice
+  creates 200 items, not an error. Delete via the Items tab (or truncate
+  `catalog_items` directly in Supabase) for a clean slate first if needed.
+
+Verified end-to-end: ran the Node script against a live local server (all
+100/100 created, zero failures - which also confirms the data passes the
+exact same `routes/catalog.js` validation Supabase's data goes through),
+then confirmed in a real browser that all 100 appear correctly on both the
+Items tab's table and the Checkout tab's item picker, and that selecting
+one fills the amount/description exactly as expected.
+
 ## Reset device (Device settings)
 
 **Use this if contactless (tap) transactions are failing at every amount,
