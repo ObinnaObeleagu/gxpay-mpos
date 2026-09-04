@@ -1,20 +1,23 @@
 /**
  * transactions.js
  * ---------------------------------------------------------------------------
- * Powers two tabs plus the checkout screen's item picker:
+ * Powers two tabs plus the checkout screen's cart:
  *   - "Transactions": lists everything recorded (GET /api/payments), with
  *     view/reprint/re-download for any past receipt
  *   - "Items": the sale/service catalog (GET/POST/PATCH/DELETE
  *     /api/catalog) - add, edit, delete items and their prices
- *   - The Checkout tab's "Item" picker reads from the same catalog so
- *     selecting an item fills in the amount and a receipt description
- *     ("Sale of wine") instead of a bare amount - see
- *     onCatalogItemSelected()/getSelectedDescription(), called from
- *     paymentProcessor.js's checkout().
+ *   - The Checkout tab's cart: pick items from the same catalog, adjust
+ *     quantity, add multiple different items to a running cart with a
+ *     total shown below - see addToCart()/removeFromCart()/renderCart().
+ *     Charging with a non-empty cart sends items[] to the backend, which
+ *     computes the authoritative total and an itemized receipt server-side
+ *     (see routes/payments.js) - this module's cart total is for the
+ *     operator's benefit, not the source of truth for what actually gets
+ *     charged.
  *
  * Kept as its own module, separate from paymentProcessor.js, since it's a
- * distinct concern (browsing history / catalog management vs. running a
- * live transaction).
+ * distinct concern (browsing history / catalog management / cart-building
+ * vs. running a live transaction).
  * ---------------------------------------------------------------------------
  */
 (function (global) {
@@ -26,7 +29,7 @@
     currentReceipt: null,
     catalogItems: [],
     editingItemId: null,
-    selectedCatalogItem: null,
+    cart: [], // [{ itemId, name, unitPrice, currency, qty }]
   };
 
   function $(id) {
@@ -48,6 +51,23 @@
   function formatMoney(currency, amount) {
     const n = Number(amount);
     return `${currency} ${Number.isNaN(n) ? amount : n.toFixed(2)}`;
+  }
+
+  /** Renders a receipt's itemized cart rows (when present) as HTML - shared
+   *  by both the live checkout receipt panel (paymentProcessor.js) and the
+   *  Transactions tab's receipt modal below, so a multi-item receipt looks
+   *  identical in both places. */
+  function renderReceiptItemsHtml(receipt) {
+    if (!receipt.items || !receipt.items.length) return '';
+    const rows = receipt.items
+      .map(
+        (item) => `<div class="gx-receipt-row">
+          <span class="label">${escapeHtml(item.qty)} &times; ${escapeHtml(item.name)}</span>
+          <span class="value">${escapeHtml(formatMoney(receipt.currency, item.lineTotal))}</span>
+        </div>`
+      )
+      .join('');
+    return `<div class="gx-receipt-items"><div class="gx-receipt-items-label">Items</div>${rows}</div>`;
   }
 
   // ---- tab switching ------------------------------------------------------
@@ -162,9 +182,11 @@
       ['Time', new Date(receipt.timestamp).toLocaleString()],
     ];
 
-    $('tx-receipt-body').innerHTML = rows
+    const itemsHtml = renderReceiptItemsHtml(receipt);
+    const rowsHtml = rows
       .map(([label, value]) => `<div class="gx-receipt-row"><span class="label">${escapeHtml(label)}</span><span class="value">${escapeHtml(String(value))}</span></div>`)
       .join('');
+    $('tx-receipt-body').innerHTML = itemsHtml + rowsHtml;
   }
 
   function printCurrentReceipt() {
@@ -182,7 +204,7 @@
     a.remove();
   }
 
-  // ---- catalog: shared load (powers both the checkout picker and the
+  // ---- catalog: shared load (powers both the checkout cart picker and the
   // Items tab's table) ------------------------------------------------------
   async function loadCatalog() {
     try {
@@ -212,72 +234,124 @@
     }
 
     select.innerHTML =
-      '<option value="">Custom amount (no item)</option>' +
+      '<option value="">Select an item...</option>' +
       (sale.length ? `<optgroup label="Sale items">${optionsFor(sale)}</optgroup>` : '') +
       (service.length ? `<optgroup label="Services">${optionsFor(service)}</optgroup>` : '');
 
-    // Preserve selection across a reload (e.g. after adding a new item)
-    // where possible.
     if (previousValue && state.catalogItems.some((i) => i.id === previousValue)) {
       select.value = previousValue;
     }
   }
 
-  // ---- checkout integration: item picker -----------------------------------
-  function onCatalogItemSelected() {
+  // ---- checkout cart --------------------------------------------------------
+  function addToCart() {
     const select = $('catalog-item-select');
     const qtyInput = $('catalog-item-qty');
-    const amountInput = $('Amount');
-    const currencySelect = $('currency_code');
-    if (!select) return;
-
-    const id = select.value;
+    if (!select || !select.value) {
+      // eslint-disable-next-line no-alert
+      alert('Select an item first.');
+      return;
+    }
+    const item = state.catalogItems.find((i) => i.id === select.value);
+    if (!item) return;
     const qty = Math.max(1, parseInt((qtyInput && qtyInput.value) || '1', 10) || 1);
 
-    if (!id) {
-      state.selectedCatalogItem = null;
+    const existing = state.cart.find((line) => line.itemId === item.id);
+    if (existing) {
+      existing.qty += qty;
+    } else {
+      state.cart.push({ itemId: item.id, name: item.name, unitPrice: Number(item.price), currency: item.currency, qty });
+    }
+
+    // Reset the picker for adding the next item, cleanly.
+    select.value = '';
+    if (qtyInput) qtyInput.value = '1';
+
+    renderCart();
+  }
+
+  function removeFromCart(index) {
+    state.cart.splice(index, 1);
+    renderCart();
+  }
+
+  function clearCart() {
+    state.cart = [];
+    renderCart();
+  }
+
+  function getCartTotal() {
+    return state.cart.reduce((sum, line) => sum + line.unitPrice * line.qty, 0);
+  }
+
+  /** Called from paymentProcessor.js's checkout() to build the items[]
+   *  field for POST /api/payments/charge. Returns undefined when the cart
+   *  is empty (plain custom-amount charge, unchanged from before this
+   *  feature existed). */
+  function getCartItemsForCharge() {
+    if (!state.cart.length) return undefined;
+    return state.cart.map((line) => ({ name: line.name, unitPrice: line.unitPrice, qty: line.qty }));
+  }
+
+  function renderCart() {
+    const section = $('cart-section');
+    const rowsEl = $('cart-rows');
+    const totalEl = $('cart-total-display');
+    const amountInput = $('Amount');
+    const currencySelect = $('currency_code');
+    if (!section || !rowsEl || !totalEl) return;
+
+    if (!state.cart.length) {
+      section.style.display = 'none';
+      if (amountInput) {
+        amountInput.readOnly = false;
+        amountInput.value = '';
+      }
       return;
     }
 
-    const item = state.catalogItems.find((i) => i.id === id);
-    if (!item) return;
+    section.style.display = 'block';
+    rowsEl.innerHTML = state.cart
+      .map(
+        (line, index) => `<div class="gx-cart-row">
+          <div class="gx-cart-row-info">
+            <span class="gx-cart-row-name">${escapeHtml(line.name)}</span>
+            <span class="gx-cart-row-qty">Qty: ${escapeHtml(line.qty)}</span>
+          </div>
+          <span class="gx-cart-row-price">${escapeHtml(formatMoney(line.currency, line.unitPrice * line.qty))}</span>
+          <button type="button" class="gx-cart-row-remove" onclick="Transactions.removeFromCart(${index})" aria-label="Remove ${escapeHtml(line.name)}">&times;</button>
+        </div>`
+      )
+      .join('');
 
-    state.selectedCatalogItem = { item, qty };
+    const total = getCartTotal();
+    const cartCurrency = state.cart[0].currency;
+    totalEl.textContent = formatMoney(cartCurrency, total);
 
-    const total = Number(item.price) * qty;
-    // The Dspread SDK's own checkAmount() (main.js) hard-rejects any
-    // amount string containing a "." with INPUT_INVALID_FORMAT - confirmed
-    // via real-device testing. A human typing into <input type="number">
-    // naturally never includes a decimal point unless they type one
-    // (typing "1000" gives value="1000"), which is why this only surfaced
-    // once this picker started setting the field programmatically.
-    // String(total) matches that same decimal-free format for whole-number
-    // prices (the common case - item prices here are typically whole Naira
-    // amounts). Fractional totals (e.g. a unit price with kobo) would still
-    // hit the device's own restriction - that's a genuine hardware/SDK
-    // limit, not something fixable from this side; keeping it as a known
-    // limitation rather than inventing unverified minor-unit handling.
-    if (amountInput) amountInput.value = String(total);
-
-    // Match the currency dropdown to the item's currency where possible,
-    // so the charge and the description agree with each other.
+    // Sync the currency dropdown to the cart's currency (all lines are
+    // assumed to share one - mixing currencies in a single cart isn't a
+    // sensible real-world scenario, so this isn't specially handled beyond
+    // following whatever the first item added was priced in).
     if (currencySelect) {
-      const match = Array.from(currencySelect.options).find((o) => o.getAttribute('data-alpha') === item.currency);
+      const match = Array.from(currencySelect.options).find((o) => o.getAttribute('data-alpha') === cartCurrency);
       if (match) currencySelect.value = match.value;
     }
-  }
 
-  /**
-   * Called from paymentProcessor.js's checkout() to build the receipt
-   * description, e.g. "Sale of Bottled water (case of 50)" or
-   * "3 x Spa and massage service" when a quantity > 1 was set. Returns
-   * undefined for a plain custom-amount charge (no item selected).
-   */
-  function getSelectedDescription() {
-    const sel = state.selectedCatalogItem;
-    if (!sel) return undefined;
-    const verb = sel.item.type === 'service' ? 'Payment for' : 'Sale of';
-    return sel.qty > 1 ? `${verb} ${sel.qty} x ${sel.item.name}` : `${verb} ${sel.item.name}`;
+    // The Amount field becomes read-only and auto-synced to the cart total
+    // while the cart has items - see the note on checkAmount()'s
+    // decimal-point rejection below for why String(), not toFixed(2).
+    if (amountInput) {
+      amountInput.readOnly = true;
+      // The Dspread SDK's own checkAmount() (main.js) hard-rejects any
+      // amount string containing a "." with INPUT_INVALID_FORMAT -
+      // confirmed via real-device testing (see the single-item picker's
+      // original fix for this exact bug). String(total) matches the
+      // decimal-free format a human typing a whole-number amount produces
+      // naturally. Fractional cart totals (e.g. from a unit price with
+      // kobo) would still hit the device's own restriction - a genuine
+      // hardware/SDK limit, not fixable from this side.
+      amountInput.value = String(total);
+    }
   }
 
   // ---- items tab: table + add/edit/delete ----------------------------------
@@ -381,16 +455,19 @@
     printCurrentReceipt,
     downloadCurrentReceiptPdf,
     loadCatalog,
-    onCatalogItemSelected,
-    getSelectedDescription,
+    addToCart,
+    removeFromCart,
+    clearCart,
+    getCartItemsForCharge,
+    renderReceiptItemsHtml,
     editItem,
     cancelItemEdit,
     submitItemForm,
     deleteItem,
   };
 
-  // Populate the checkout item picker as soon as the page loads (not just
-  // when the Items tab is opened), since the Checkout tab is the default
-  // view and its picker needs the same data immediately.
+  // Populate the checkout cart's item picker as soon as the page loads (not
+  // just when the Items tab is opened), since the Checkout tab is the
+  // default view and its picker needs the same data immediately.
   document.addEventListener('DOMContentLoaded', loadCatalog);
 })(window);

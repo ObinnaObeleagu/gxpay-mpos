@@ -15,7 +15,63 @@ function toMinorUnits(amount) {
   return Math.round(n * 100);
 }
 
-function buildReceipt({ reference, amount, currency, result, device, description }) {
+/**
+ * Validates an optional cart line-items array - see the "items" field on
+ * POST /charge below. Each line needs a name, a non-negative unit price,
+ * and a positive integer quantity.
+ */
+function validateItems(items) {
+  const errors = [];
+  if (items === undefined) return errors;
+  if (!Array.isArray(items) || items.length === 0) {
+    errors.push('items must be a non-empty array if provided');
+    return errors;
+  }
+  items.forEach((item, i) => {
+    if (!item || typeof item !== 'object') {
+      errors.push(`items[${i}] must be an object`);
+      return;
+    }
+    if (!item.name || typeof item.name !== 'string') {
+      errors.push(`items[${i}].name is required`);
+    }
+    if (item.unitPrice === undefined || Number.isNaN(Number(item.unitPrice)) || Number(item.unitPrice) < 0) {
+      errors.push(`items[${i}].unitPrice must be a non-negative number`);
+    }
+    if (item.qty === undefined || !Number.isInteger(Number(item.qty)) || Number(item.qty) < 1) {
+      errors.push(`items[${i}].qty must be a positive integer`);
+    }
+  });
+  return errors;
+}
+
+/** Sum of unitPrice * qty across all cart lines - the authoritative charge
+ *  amount whenever items are present (see the note in POST /charge on why
+ *  this is computed server-side rather than trusting a client-supplied
+ *  amount when we have the line items to derive it from directly). */
+function totalForItems(items) {
+  return items.reduce((sum, item) => sum + Number(item.unitPrice) * Number(item.qty), 0);
+}
+
+function summarizeItems(items) {
+  if (!items || !items.length) return null;
+  if (items.length === 1) {
+    const item = items[0];
+    return item.qty > 1 ? `${item.qty} x ${item.name}` : item.name;
+  }
+  return `${items.length} items`;
+}
+
+function buildReceipt({ reference, amount, currency, result, device, description, items }) {
+  const normalizedItems = items
+    ? items.map((item) => ({
+        name: item.name,
+        unitPrice: Number(item.unitPrice).toFixed(2),
+        qty: Number(item.qty),
+        lineTotal: (Number(item.unitPrice) * Number(item.qty)).toFixed(2),
+      }))
+    : null;
+
   return {
     reference,
     merchant: config.merchantName,
@@ -23,10 +79,16 @@ function buildReceipt({ reference, amount, currency, result, device, description
     amount: Number(amount).toFixed(2),
     currency,
     // What was actually sold, e.g. "Sale of wine" / "Payment for swimming
-    // service" - set from a selected catalog item (see store/catalogStore.js)
-    // or typed manually at checkout. Optional - a bare custom-amount charge
-    // has no description, and older/existing transactions won't have one.
-    description: description || null,
+    // service" / "3 items" for a multi-item cart. Set from a selected
+    // catalog item or cart (see store/catalogStore.js, the Checkout tab's
+    // cart), typed manually, or auto-derived from items[] below when not
+    // given explicitly. Optional - a bare custom-amount charge has none.
+    description: description || summarizeItems(items) || null,
+    // Itemized cart lines, when the charge was for more than a single bare
+    // amount - each with its own unit price/qty/line total so the receipt
+    // can show a real itemized breakdown, not just a summary line. Null
+    // for a plain custom-amount or single-description charge.
+    items: normalizedItems,
     card: maskAmountReceiptCard(result.maskedPan || device.maskedPan),
     cardScheme: result.cardScheme || device.cardScheme || null,
     entryMode: device.entryMode,
@@ -86,12 +148,29 @@ router.get('/', async (req, res) => {
  * routes/catalog.js.
  */
 router.post('/charge', async (req, res) => {
-  const { amount, currency, device, description } = req.body || {};
+  const { currency, device, description, items } = req.body || {};
+  let { amount } = req.body || {};
   const reference = req.body?.reference || `TXN-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
 
   // --- validation ---
   const errors = [];
-  if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
+  errors.push(...validateItems(items));
+
+  // When a cart (items[]) is provided, the charge amount is always
+  // computed from it server-side, never trusted from the client - even
+  // though the Checkout tab's cart total should already match, deriving
+  // the authoritative amount from the line items directly (rather than a
+  // separately-sent `amount` that could in principle drift from them,
+  // whether from a bug or tampering) is the safer design.
+  if (items !== undefined) {
+    // items was provided (even if it turns out invalid) - don't also
+    // complain about a separately missing `amount` below, that's not what
+    // the client was attempting and would just be a confusing, redundant
+    // second error message alongside the real one.
+    if (errors.length === 0) {
+      amount = totalForItems(items).toFixed(2);
+    }
+  } else if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
     errors.push('amount must be a positive number');
   }
   if (!currency || typeof currency !== 'string') {
@@ -111,7 +190,7 @@ router.post('/charge', async (req, res) => {
       reference,
       amount: Number(amount).toFixed(2),
       currency,
-      description: description || null,
+      description: description || summarizeItems(items) || null,
       status: 'pending',
       device: { entryMode: device.entryMode, model: device.model, maskedPan: device.maskedPan },
       createdAt: new Date().toISOString(),
@@ -131,12 +210,12 @@ router.post('/charge', async (req, res) => {
       merchant: { merchantId: config.gxpay.merchantId, terminalId: config.gxpay.terminalId || config.terminalId },
     });
 
-    const receipt = buildReceipt({ reference, amount, currency, result, device, description });
+    const receipt = buildReceipt({ reference, amount, currency, result, device, description, items });
 
     await store.update(reference, {
       status: result.status,
       gatewayReference: result.gatewayReference,
-      description: description || null,
+      description: receipt.description,
       receipt,
     });
 

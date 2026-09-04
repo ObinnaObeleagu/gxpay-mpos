@@ -139,12 +139,13 @@
       amount: amount.toFixed(2),
       currencyAlpha: currency.alpha,
       currencyNumeric: currency.numeric,
-      // Set by the Items tab's picker (Transactions.onCatalogItemSelected())
-      // when the operator selected a catalog item rather than typing a
-      // custom amount - see public/dist/js/transactions.js. Undefined for
-      // a plain custom-amount charge, which is fine - the backend treats a
-      // missing/empty description as optional.
-      description: (global.Transactions && global.Transactions.getSelectedDescription) ? global.Transactions.getSelectedDescription() : undefined,
+      // Set by the Checkout tab's cart (Transactions.getCartItemsForCharge())
+      // when the operator added one or more catalog items rather than
+      // typing a custom amount - see public/dist/js/transactions.js.
+      // Undefined for a plain custom-amount charge (empty cart), which is
+      // fine - the backend treats a missing items[] as optional and the
+      // charge behaves exactly as it did before this feature existed.
+      items: (global.Transactions && global.Transactions.getCartItemsForCharge) ? global.Transactions.getCartItemsForCharge() : undefined,
     };
 
     resetTrace();
@@ -377,7 +378,7 @@
       reference: p.reference,
       device: Object.assign({ model: 'CR100-SCRP' }, device),
     };
-    if (p.description) payload.description = p.description;
+    if (p.items && p.items.length) payload.items = p.items;
 
     return fetch('/api/payments/charge', {
       method: 'POST',
@@ -408,6 +409,14 @@
     const approved = receipt.status === 'approved';
     setCardStatus(approved ? 'approved' : 'declined', approved ? 'Payment approved.' : `Payment declined: ${receipt.responseMessage || ''}`);
     trace(approved ? 'Payment approved' : 'Payment declined', receipt.responseMessage || '');
+
+    // Clear the cart only on approval - the transaction is genuinely done,
+    // ready for the next customer. On a decline, deliberately leave the
+    // cart as-is so the operator can retry the exact same cart with a
+    // different card without having to rebuild it from scratch.
+    if (approved && global.Transactions && global.Transactions.clearCart) {
+      global.Transactions.clearCart();
+    }
 
     showReceipt(receipt);
   }
@@ -449,9 +458,11 @@
       ['Time', new Date(receipt.timestamp).toLocaleString()],
     ];
 
-    body.innerHTML = rows
-      .map(([label, value]) => `<div class="gx-receipt-row"><span class="label">${label}</span><span class="value">${escapeHtml(String(value))}</span></div>`)
-      .join('');
+    body.innerHTML =
+      (global.Transactions && global.Transactions.renderReceiptItemsHtml ? global.Transactions.renderReceiptItemsHtml(receipt) : '') +
+      rows
+        .map(([label, value]) => `<div class="gx-receipt-row"><span class="label">${label}</span><span class="value">${escapeHtml(String(value))}</span></div>`)
+        .join('');
 
     wrap.classList.add('is-visible');
   }

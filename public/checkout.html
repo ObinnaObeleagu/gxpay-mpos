@@ -64,12 +64,31 @@
         </div>
 
         <div class="gx-field">
-          <label for="catalog-item-select">Item <span class="gx-label-hint">(optional - fills amount &amp; description below)</span></label>
+          <label for="catalog-item-select">Add item to cart</label>
           <div class="gx-amount-row">
-            <select id="catalog-item-select" class="gx-select" style="flex:1;" onchange="Transactions.onCatalogItemSelected()">
-              <option value="">Custom amount (no item)</option>
+            <select id="catalog-item-select" class="gx-select" style="flex:1;">
+              <option value="">Select an item...</option>
             </select>
-            <input type="number" min="1" step="1" class="gx-select" id="catalog-item-qty" value="1" style="width:70px; text-align:center;" aria-label="Quantity" onchange="Transactions.onCatalogItemSelected()">
+            <input type="number" min="1" step="1" class="gx-select" id="catalog-item-qty" value="1" style="width:60px; text-align:center;" aria-label="Quantity">
+            <button type="button" class="gx-btn" id="cart-add-btn" style="width:auto; padding:0 16px;" onclick="Transactions.addToCart()">Add</button>
+          </div>
+        </div>
+
+        <!-- Cart - hidden until at least one item is added. Each line
+             shows name, qty, and line price; a running total sits below
+             all lines. The Amount field further down becomes read-only
+             and syncs to this total whenever the cart isn't empty - see
+             Transactions.renderCart(). Charging with a non-empty cart
+             sends items[] to the backend (POST /api/payments/charge),
+             which computes the authoritative total server-side rather
+             than trusting whatever's showing here (see routes/payments.js)
+             - this display is for the operator's benefit, not the source
+             of truth for the actual charge amount. -->
+        <div class="gx-cart" id="cart-section" style="display:none;">
+          <div class="gx-cart-rows" id="cart-rows"></div>
+          <div class="gx-cart-total">
+            <span>Total</span>
+            <span id="cart-total-display">NGN 0.00</span>
           </div>
         </div>
 

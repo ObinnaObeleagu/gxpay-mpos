@@ -330,7 +330,7 @@ data:
    with Node 22 (the deploy log prints the resolved Node version near the
    top), and that the deploy is recent enough to include this fix.
 
-## Items (sale/service catalog) and receipt descriptions
+## Items (sale/service catalog) and multi-item checkout
 
 The **Items** tab is a price list: add sale items and services with a name,
 price, currency, and type. `db/schema.sql`'s `catalog_items` table backs
@@ -338,23 +338,44 @@ it, via the same Supabase/in-memory dual-backend pattern as transactions
 (`store/catalogStore.js`, `routes/catalog.js` - full CRUD:
 `GET/POST /api/catalog`, `PATCH/DELETE /api/catalog/:id`).
 
-On the **Checkout** tab, an "Item" picker (populated from the same
-catalog) sits above Transaction Type. Selecting an item:
-- Fills the Amount field with the item's price x quantity (quantity
-  defaults to 1, editable next to the picker)
-- Matches the currency dropdown to the item's currency
-- Sets a receipt description - "Sale of <item name>" for sale items,
-  "Payment for <item name>" for services, or "<verb> <qty> x <item name>"
-  when quantity > 1
+### The cart (Checkout tab)
 
-That description flows through the whole system: `POST
-/api/payments/charge`'s optional `description` field ->
-`buildReceipt()` -> stored with the transaction -> shown as a headline
-(above the itemized rows) on the live checkout receipt, the Transactions
-tab's list and receipt modal, and the downloadable/printable PDF
-(`lib/receiptPdf.js`). A custom-amount charge (no item selected) simply has
-no description, exactly like before this feature existed - nothing about
-the existing flow changed for that case.
+A client checking out several items at once - "Add item to cart" picks an
+item + quantity from the catalog and adds it as a line to a running cart,
+shown with each line's price beside it and a total below (`public/dist/js/
+transactions.js`'s `addToCart()`/`removeFromCart()`/`renderCart()`). The
+Amount field becomes read-only and auto-syncs to the cart total while the
+cart has items, reverting to a normal editable field for a plain
+custom-amount charge the moment the cart is emptied - both modes coexist,
+nothing about the original single-amount flow was removed.
+
+**The charge amount is never trusted from the client when a cart is
+involved.** `POST /api/payments/charge` accepts an `items` array
+(`[{name, unitPrice, qty}]`); whenever it's present, the backend computes
+the authoritative total by summing the line items itself and ignores
+whatever `amount` the client also sent - verified directly: sent a real
+cart alongside a deliberately wrong `amount`, confirmed the server charged
+the correct line-item total instead, not the tampered value.
+
+The resulting receipt carries the full itemized breakdown
+(`receipt.items`, each with `unitPrice`/`qty`/`lineTotal`) alongside an
+auto-generated summary description ("3 items", or "Sale of X" /
+"Payment for X" for a single-line cart) - both flow through to every
+surface: the live checkout receipt panel, the Transactions tab's list and
+receipt modal (same shared rendering helper,
+`Transactions.renderReceiptItemsHtml()`, so a multi-item receipt looks
+identical in both places), and the downloadable/printable PDF
+(`lib/receiptPdf.js`, with a dynamically-sized page so a long cart doesn't
+get clipped or split awkwardly across pages).
+
+**Cart clearing is deliberately outcome-dependent:** approved clears the
+cart (transaction genuinely done, ready for the next customer); declined
+leaves it as-is, so the operator can retry the exact same cart with a
+different card without rebuilding it from scratch. Verified both paths
+with real charges through the mock gateway, not just code review.
+
+A plain custom-amount charge (empty cart) has no `items`/description at
+all, exactly like before this feature existed.
 
 ### Seeding 100 sample items
 

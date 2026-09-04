@@ -613,6 +613,62 @@ a:hover { color: var(--brand-strong); }
 .gx-btn-link:hover { color: var(--brand-strong); text-decoration: underline; }
 .gx-btn-link:disabled { color: var(--ink-soft); cursor: not-allowed; text-decoration: none; opacity: 0.6; }
 
+/* ---------- checkout cart ---------- */
+
+.gx-cart {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin: 4px 0 18px;
+}
+.gx-cart-rows { display: flex; flex-direction: column; gap: 8px; }
+.gx-cart-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gx-cart-row-info { flex: 1; min-width: 0; }
+.gx-cart-row-name {
+  display: block;
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gx-cart-row-qty { display: block; font-size: 11px; color: var(--ink-soft); }
+.gx-cart-row-price {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.gx-cart-row-remove {
+  background: none;
+  border: none;
+  color: var(--danger);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.gx-cart-row-remove:hover { opacity: 0.7; }
+.gx-cart-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+}
+.gx-cart-total span:last-child { font-family: var(--font-mono); }
+.gx-amount-input[readonly] { background: var(--brand-tint); color: var(--brand-strong); cursor: not-allowed; }
+
 /* ---------- items (catalog) ---------- */
 
 .gx-item-form {
@@ -639,6 +695,20 @@ a:hover { color: var(--brand-strong); }
   color: var(--ink);
   margin: 0 0 14px;
   line-height: 1.4;
+}
+
+/* Itemized cart breakdown on a receipt (live checkout panel and the
+   Transactions tab's receipt modal both use this via
+   Transactions.renderReceiptItemsHtml()) - sits above the regular
+   label:value rows, visually grouped under its own small heading. */
+.gx-receipt-items { margin-bottom: 4px; }
+.gx-receipt-items-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
 }
 
 /* ---------- PIN entry modal ---------- */
