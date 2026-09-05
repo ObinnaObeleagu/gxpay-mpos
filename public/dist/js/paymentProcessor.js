@@ -459,10 +459,10 @@
     ];
 
     body.innerHTML =
-      (global.Transactions && global.Transactions.renderReceiptItemsHtml ? global.Transactions.renderReceiptItemsHtml(receipt) : '') +
       rows
         .map(([label, value]) => `<div class="gx-receipt-row"><span class="label">${label}</span><span class="value">${escapeHtml(String(value))}</span></div>`)
-        .join('');
+        .join('') +
+      (global.Transactions && global.Transactions.renderReceiptItemsHtml ? global.Transactions.renderReceiptItemsHtml(receipt) : '');
 
     wrap.classList.add('is-visible');
   }

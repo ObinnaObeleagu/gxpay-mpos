@@ -186,7 +186,7 @@
     const rowsHtml = rows
       .map(([label, value]) => `<div class="gx-receipt-row"><span class="label">${escapeHtml(label)}</span><span class="value">${escapeHtml(String(value))}</span></div>`)
       .join('');
-    $('tx-receipt-body').innerHTML = itemsHtml + rowsHtml;
+    $('tx-receipt-body').innerHTML = rowsHtml + itemsHtml;
   }
 
   function printCurrentReceipt() {
